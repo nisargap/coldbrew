@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Uploads
+backend/uploads/
+
+# Environment
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+backend/venv/
+
+# Database
+backend/*.db
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db

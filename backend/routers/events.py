@@ -13,10 +13,27 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 VALID_STATUSES = {"acknowledged", "dismissed"}
 
 
+def row_to_event(row: sqlite3.Row) -> EventResponse:
+    return EventResponse(
+        id=row["id"],
+        feed_id=row["feed_id"],
+        timestamp=row["timestamp"],
+        category=row["category"],
+        severity=row["severity"],
+        title=row["title"],
+        description=row["description"],
+        source_feed=row["source_feed"],
+        thumbnail_url=row["thumbnail_url"],
+        confidence=row["confidence"],
+        status=row["status"],
+    )
+
+
 @router.get("", response_model=list[EventResponse])
 def list_events(
     category: Optional[str] = Query(None),
     severity: Optional[str] = Query(None),
+    feed_id: Optional[str] = Query(None),
     db: sqlite3.Connection = Depends(get_db),
 ):
     query = "SELECT * FROM events WHERE 1=1"
@@ -28,25 +45,14 @@ def list_events(
     if severity:
         query += " AND severity = ?"
         params.append(severity)
+    if feed_id:
+        query += " AND feed_id = ?"
+        params.append(feed_id)
 
     query += " ORDER BY created_at DESC"
     rows = db.execute(query, params).fetchall()
 
-    return [
-        EventResponse(
-            id=row["id"],
-            timestamp=row["timestamp"],
-            category=row["category"],
-            severity=row["severity"],
-            title=row["title"],
-            description=row["description"],
-            source_feed=row["source_feed"],
-            thumbnail_url=row["thumbnail_url"],
-            confidence=row["confidence"],
-            status=row["status"],
-        )
-        for row in rows
-    ]
+    return [row_to_event(row) for row in rows]
 
 
 @router.get("/{event_id}", response_model=EventResponse)
@@ -54,18 +60,7 @@ def get_event(event_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
-    return EventResponse(
-        id=row["id"],
-        timestamp=row["timestamp"],
-        category=row["category"],
-        severity=row["severity"],
-        title=row["title"],
-        description=row["description"],
-        source_feed=row["source_feed"],
-        thumbnail_url=row["thumbnail_url"],
-        confidence=row["confidence"],
-        status=row["status"],
-    )
+    return row_to_event(row)
 
 
 @router.patch("/{event_id}")

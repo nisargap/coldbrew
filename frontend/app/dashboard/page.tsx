@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AlertTriangle, Filter, Bell, Check, X, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Filter, Bell, Check, X, ChevronDown, ExternalLink } from "lucide-react";
 import { getEvents, updateEventStatus, sendNotification } from "@/lib/api";
 import type { Event, Persona } from "@/lib/types";
 import { PERSONAS, SEVERITY_COLORS } from "@/lib/types";
@@ -10,6 +11,7 @@ const CATEGORIES = ["All", "Safety", "Equipment", "Shipment", "Operational", "En
 const SEVERITIES = ["All", "Critical", "High", "Medium", "Low"];
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -62,6 +64,11 @@ export default function DashboardPage() {
     }
   };
 
+  const handleQuickNotify = (event: Event) => {
+    setSelectedIds(new Set([event.id]));
+    setShowNotifyModal(true);
+  };
+
   const formatTime = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
@@ -72,11 +79,23 @@ export default function DashboardPage() {
     return `${Math.floor(hrs / 24)}d ago`;
   };
 
+  const criticalCount = events.filter(
+    (e) => (e.severity === "Critical" || e.severity === "High") && e.status === "new"
+  ).length;
+
   return (
     <div className="p-6">
       {/* Header + Filters */}
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-xl font-semibold text-zinc-50">Events</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold text-zinc-50">Events</h2>
+          {criticalCount > 0 && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-red-400 bg-red-500/[0.08] border border-red-500/25 rounded-full animate-pulse">
+              <AlertTriangle size={11} />
+              {criticalCount} critical
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-zinc-500" />
           <select
@@ -127,6 +146,7 @@ export default function DashboardPage() {
             const isSelected = selectedIds.has(event.id);
             const isExpanded = expandedId === event.id;
             const sev = SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.Low;
+            const isCritical = event.severity === "Critical" || event.severity === "High";
 
             return (
               <div key={event.id}>
@@ -149,8 +169,10 @@ export default function DashboardPage() {
                   />
 
                   {/* Thumbnail placeholder */}
-                  <div className="w-12 h-12 bg-[#27272A] rounded-md flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle size={16} className="text-zinc-600" />
+                  <div className={`w-12 h-12 rounded-md flex items-center justify-center flex-shrink-0 ${
+                    isCritical ? "bg-red-500/[0.08] border border-red-500/20" : "bg-[#27272A]"
+                  }`}>
+                    <AlertTriangle size={16} className={isCritical ? "text-red-400" : "text-zinc-600"} />
                   </div>
 
                   {/* Content */}
@@ -180,7 +202,13 @@ export default function DashboardPage() {
                         {event.severity}
                       </span>
                       <span className="text-[11px] text-zinc-600">·</span>
-                      <span className="text-[11px] text-zinc-500">{event.source_feed}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); router.push(`/feeds/${event.feed_id}`); }}
+                        className="text-[11px] text-blue-400 hover:underline flex items-center gap-0.5"
+                      >
+                        {event.source_feed}
+                        <ExternalLink size={9} />
+                      </button>
                       <span className="text-[11px] text-zinc-600">·</span>
                       <span className="text-xs text-zinc-600 font-mono">
                         {formatTime(event.timestamp)}
@@ -188,9 +216,24 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
+                  {/* Quick notify for critical/high severity events */}
+                  {isCritical && event.status === "new" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickNotify(event);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors flex-shrink-0"
+                      title="Send alert for this event"
+                    >
+                      <Bell size={11} />
+                      Alert
+                    </button>
+                  )}
+
                   <ChevronDown
                     size={14}
-                    className={`text-zinc-600 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    className={`text-zinc-600 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
                   />
                 </div>
 
@@ -200,7 +243,13 @@ export default function DashboardPage() {
                     <p className="text-sm text-zinc-300 mb-3">{event.description}</p>
                     <div className="flex items-center gap-4 text-xs text-zinc-500 mb-4">
                       <span>Confidence: {(event.confidence * 100).toFixed(0)}%</span>
-                      <span>Feed: {event.source_feed}</span>
+                      <button
+                        onClick={() => router.push(`/feeds/${event.feed_id}`)}
+                        className="text-blue-400 hover:underline flex items-center gap-1"
+                      >
+                        View feed: {event.source_feed}
+                        <ExternalLink size={10} />
+                      </button>
                       <span>ID: {event.id.slice(0, 8)}</span>
                     </div>
                     {event.status === "new" && (
@@ -219,6 +268,13 @@ export default function DashboardPage() {
                           <X size={13} />
                           Dismiss
                         </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleQuickNotify(event); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors"
+                        >
+                          <Bell size={13} />
+                          Send Alert
+                        </button>
                       </div>
                     )}
                   </div>
@@ -235,13 +291,21 @@ export default function DashboardPage() {
           <span className="text-sm text-zinc-300">
             {selectedIds.size} event{selectedIds.size !== 1 ? "s" : ""} selected
           </span>
-          <button
-            onClick={() => setShowNotifyModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-[13px] font-medium rounded-md hover:bg-blue-600 transition-colors"
-          >
-            <Bell size={14} />
-            Notify
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-[13px] text-zinc-400 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowNotifyModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-[13px] font-medium rounded-md hover:bg-blue-600 transition-colors"
+            >
+              <Bell size={14} />
+              Notify
+            </button>
+          </div>
         </div>
       )}
 
@@ -254,6 +318,7 @@ export default function DashboardPage() {
             setSelectedIds(new Set());
             setShowNotifyModal(false);
             showToast("Notification sent.");
+            fetchEvents();
           }}
         />
       )}
@@ -277,7 +342,21 @@ function NotifyModal({
   onClose: () => void;
   onSent: () => void;
 }) {
-  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(new Set());
+  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(() => {
+    // Smart auto-select: match personas to event categories
+    const autoSelect = new Set<string>();
+    for (const e of selectedEvents) {
+      if (e.severity === "Critical" || e.severity === "High") {
+        autoSelect.add("alex-rivera"); // Warehouse Manager for all Critical/High
+      }
+      if (e.category === "Safety") autoSelect.add("priya-desai");
+      if (e.category === "Equipment") autoSelect.add("sam-okafor");
+      if (e.category === "Shipment") autoSelect.add("jordan-lin");
+    }
+    if (autoSelect.size === 0) autoSelect.add("alex-rivera");
+    return autoSelect;
+  });
+
   const [message, setMessage] = useState(() => {
     const lines = selectedEvents.map(
       (e) => `• [${e.severity}] ${e.title} (${e.category})`
@@ -323,6 +402,21 @@ function NotifyModal({
           {selectedEvents.length} event{selectedEvents.length !== 1 ? "s" : ""} selected
         </p>
 
+        {/* Event summary */}
+        <div className="mt-3 space-y-1 max-h-24 overflow-y-auto">
+          {selectedEvents.map((e) => {
+            const sev = SEVERITY_COLORS[e.severity] || SEVERITY_COLORS.Low;
+            return (
+              <div key={e.id} className="flex items-center gap-2 text-[12px]">
+                <span className={`px-1.5 py-0.5 rounded-full border ${sev.bg} ${sev.text} ${sev.border}`}>
+                  {e.severity}
+                </span>
+                <span className="text-zinc-300 truncate">{e.title}</span>
+              </div>
+            );
+          })}
+        </div>
+
         {/* Persona selection */}
         <div className="mt-4">
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
@@ -355,7 +449,7 @@ function NotifyModal({
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            rows={6}
+            rows={5}
             className="mt-2 w-full bg-[#27272A] border border-[#27272A] rounded-md px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 resize-none"
           />
         </div>

@@ -13,6 +13,7 @@ from models import (
     NotificationSendResponse,
     NotificationResponse,
     PersonaResponse,
+    EventSummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,12 +76,32 @@ def list_notifications(db: sqlite3.Connection = Depends(get_db)):
     for row in rows:
         sent_to = json.loads(row["sent_to"])
         event_ids = json.loads(row["event_ids"])
+
+        # Enrich with event summaries
+        event_summaries = []
+        if event_ids:
+            placeholders = ",".join("?" for _ in event_ids)
+            event_rows = db.execute(
+                f"SELECT id, title, category, severity FROM events WHERE id IN ({placeholders})",
+                event_ids,
+            ).fetchall()
+            event_summaries = [
+                EventSummary(
+                    id=er["id"],
+                    title=er["title"],
+                    category=er["category"],
+                    severity=er["severity"],
+                )
+                for er in event_rows
+            ]
+
         results.append(
             NotificationResponse(
                 id=row["id"],
                 message=row["message"],
                 sent_to=[PersonaResponse(**p) for p in sent_to],
                 event_ids=event_ids,
+                events=event_summaries,
                 created_at=row["created_at"],
             )
         )

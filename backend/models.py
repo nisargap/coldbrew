@@ -17,6 +17,7 @@ PERSONAS = {
 class FeedUploadResponse(BaseModel):
     feed_id: str
     status: str
+    analysis_mode: str
 
 
 class FeedResponse(BaseModel):
@@ -24,12 +25,14 @@ class FeedResponse(BaseModel):
     feed_name: str
     status: str
     error_message: Optional[str] = None
+    analysis_mode: str = "standard"
     created_at: str
     event_count: int
 
 
 class EventResponse(BaseModel):
     id: str
+    feed_id: str
     timestamp: str
     category: str
     severity: str
@@ -39,6 +42,13 @@ class EventResponse(BaseModel):
     thumbnail_url: Optional[str]
     confidence: float
     status: str
+
+
+class EventSummary(BaseModel):
+    id: str
+    title: str
+    category: str
+    severity: str
 
 
 class EventStatusUpdate(BaseModel):
@@ -68,4 +78,5 @@ class NotificationResponse(BaseModel):
     message: str
     sent_to: list[PersonaResponse]
     event_ids: list[str]
+    events: list[EventSummary] = []
     created_at: str

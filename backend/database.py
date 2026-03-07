@@ -20,13 +20,14 @@ def create_tables():
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS feeds (
-            id            TEXT PRIMARY KEY,
-            feed_name     TEXT NOT NULL,
-            file_path     TEXT NOT NULL,
-            status        TEXT NOT NULL DEFAULT 'processing',
-            error_message TEXT,
-            created_at    TEXT NOT NULL,
-            event_count   INTEGER DEFAULT 0
+            id             TEXT PRIMARY KEY,
+            feed_name      TEXT NOT NULL,
+            file_path      TEXT NOT NULL,
+            status         TEXT NOT NULL DEFAULT 'processing',
+            error_message  TEXT,
+            analysis_mode  TEXT NOT NULL DEFAULT 'standard',
+            created_at     TEXT NOT NULL,
+            event_count    INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS events (

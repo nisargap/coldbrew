@@ -1,11 +1,9 @@
 """
 NomadicML SDK integration for video analysis.
 
-This service handles:
-1. Uploading videos to NomadicML
-2. Running analysis with the warehouse prompt
-3. Parsing results into Event records
-4. Storing events in the database
+Supports two analysis modes:
+1. Standard (ASK) — Custom event detection with warehouse prompt
+2. Agent (GENERAL_AGENT) — NomadicML Agent with Robotic Action Segmentation (ROBOTICS category)
 """
 
 import uuid
@@ -21,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "coldbrew.db")
 
-WAREHOUSE_PROMPT = (
+# --- Prompts ---
+
+WAREHOUSE_PROMPT_STANDARD = (
     "Analyze this warehouse or facility footage for notable events. "
     "Detect and describe any of the following:\n"
     "- SAFETY: Workers without PPE (hard hats, vests, safety glasses), "
@@ -43,29 +43,49 @@ WAREHOUSE_PROMPT = (
     "and a one-sentence description of what is happening."
 )
 
+WAREHOUSE_PROMPT_AGENT = (
+    "You are a warehouse safety and operations monitoring agent. "
+    "Segment and analyze all actions and events in this warehouse or industrial facility footage.\n\n"
+    "For every action or event you detect, classify it into EXACTLY ONE of these warehouse incident categories:\n"
+    "- Safety: PPE violations, near-misses, unsafe behavior, restricted zone entries, blocked exits\n"
+    "- Equipment: Machinery malfunctions, conveyor issues, forklift problems, broken infrastructure\n"
+    "- Shipment: Truck arrivals/departures, loading/unloading, damaged cargo, dock activity\n"
+    "- Operational: Blocked aisles, misplaced inventory, idle zones, workflow disruptions\n"
+    "- Environmental: Spills, leaks, smoke, debris, temperature hazards\n\n"
+    "For each detected action segment, provide:\n"
+    "1. A clear, specific title describing the action\n"
+    "2. The category (Safety/Equipment/Shipment/Operational/Environmental)\n"
+    "3. Severity (Critical/High/Medium/Low) based on risk to people and operations\n"
+    "4. A detailed description of what is happening and why it matters\n\n"
+    "Be thorough — identify every distinct action, worker movement, "
+    "equipment operation, and environmental change in the footage."
+)
+
+
+# --- Classification helpers ---
 
 def classify_category(event_type: str, description: str) -> str:
     text = f"{event_type} {description}".lower()
-    if any(kw in text for kw in ["ppe", "hard hat", "vest", "safety", "near-miss", "restricted", "exit", "violation"]):
+    if any(kw in text for kw in ["ppe", "hard hat", "vest", "safety", "near-miss", "restricted", "exit", "violation", "worker", "injury"]):
         return "Safety"
-    elif any(kw in text for kw in ["conveyor", "forklift", "malfunction", "broken", "jam", "machinery", "equipment"]):
+    elif any(kw in text for kw in ["conveyor", "forklift", "malfunction", "broken", "jam", "machinery", "equipment", "motor", "belt"]):
         return "Equipment"
-    elif any(kw in text for kw in ["truck", "shipment", "loading", "dock", "cargo", "delivery", "arrival", "departure"]):
+    elif any(kw in text for kw in ["truck", "shipment", "loading", "dock", "cargo", "delivery", "arrival", "departure", "unloading"]):
         return "Shipment"
-    elif any(kw in text for kw in ["blocked", "aisle", "pallet", "idle", "crowd", "staging", "operational"]):
+    elif any(kw in text for kw in ["blocked", "aisle", "pallet", "idle", "crowd", "staging", "operational", "workflow", "inventory"]):
         return "Operational"
-    elif any(kw in text for kw in ["spill", "smoke", "leak", "water", "debris", "temperature", "environmental"]):
+    elif any(kw in text for kw in ["spill", "smoke", "leak", "water", "debris", "temperature", "environmental", "flood", "fire", "haze", "overflow", "liquid", "hazard", "chemical", "gas", "toxic"]):
         return "Environmental"
     return "Operational"
 
 
 def classify_severity(event_type: str, description: str) -> str:
     text = f"{event_type} {description}".lower()
-    if any(kw in text for kw in ["fire", "smoke", "collision", "injury", "critical", "emergency", "trapped"]):
+    if any(kw in text for kw in ["fire", "smoke", "collision", "injury", "critical", "emergency", "trapped", "explosion", "death"]):
         return "Critical"
-    elif any(kw in text for kw in ["near-miss", "malfunction", "no ppe", "hard hat", "blocked exit", "high", "danger"]):
+    elif any(kw in text for kw in ["near-miss", "malfunction", "no ppe", "hard hat", "blocked exit", "high", "danger", "burst", "flood", "overflow", "hazard", "toxic"]):
         return "High"
-    elif any(kw in text for kw in ["spill", "jam", "stopped", "blocked", "damaged", "medium"]):
+    elif any(kw in text for kw in ["spill", "jam", "stopped", "blocked", "damaged", "medium", "leak", "liquid", "distraction"]):
         return "Medium"
     return "Low"
 
@@ -79,10 +99,11 @@ def extract_title(description: str) -> str:
     return first_sentence
 
 
+# --- Response parser ---
+
 def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) -> list[dict]:
     events = []
 
-    # Log the full response for debugging
     logger.info(f"[Parser] Full response keys: {list(analysis_response.keys())}")
     logger.info(f"[Parser] Summary: {analysis_response.get('summary', 'N/A')}")
 
@@ -92,24 +113,42 @@ def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) 
     for i, raw in enumerate(raw_events):
         logger.info(f"[Parser] Raw event {i}: {json.dumps(raw, default=str)}")
 
-        # Extract fields from NomadicML SDK response
-        # Actual SDK format: aiAnalysis, label, category, severity (lowercase), t_start, t_end, confidence
-        description = (
+        # --- Build description from all available text fields ---
+        # Agent mode only has "label"; ASK mode has "aiAnalysis", "description", etc.
+        label = raw.get("label") or ""
+        ai_analysis = (
             raw.get("aiAnalysis")
             or raw.get("ai_analysis")
             or raw.get("description")
             or raw.get("summary")
             or raw.get("text")
-            or "No description available"
+            or ""
         )
 
-        title = (
-            raw.get("label")
-            or raw.get("title")
-            or raw.get("event_title")
-            or raw.get("name")
-            or extract_title(description)
-        )
+        # Use the richest text as description; label as fallback
+        if ai_analysis:
+            description = ai_analysis
+        elif label:
+            # Agent mode: label IS the description
+            # Strip prefix tags like "[Detection]" for a cleaner description
+            description = label
+        else:
+            description = "No description available"
+
+        # Title: use label if available, otherwise extract from description
+        if label:
+            # Clean up prefix tags like "[Detection]" for the title
+            clean_label = label
+            if clean_label.startswith("[") and "]" in clean_label:
+                clean_label = clean_label[clean_label.index("]") + 1:].strip()
+            title = extract_title(clean_label)
+        else:
+            title = (
+                raw.get("title")
+                or raw.get("event_title")
+                or raw.get("name")
+                or extract_title(description)
+            )
 
         event_type = (
             raw.get("category")
@@ -119,27 +158,41 @@ def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) 
         )
 
         confidence = raw.get("confidence") or raw.get("similarity_score") or raw.get("score") or 0.8
-
-        # Handle confidence as percentage vs decimal
         if isinstance(confidence, (int, float)) and confidence > 1:
             confidence = confidence / 100.0
 
-        # Severity from SDK is lowercase — normalize to title case
+        # Severity: normalize to title case
         severity_raw = (raw.get("severity") or raw.get("severity_level") or "").strip().title()
 
-        # Category from SDK matches our schema
+        # Category: from SDK or classify locally
         category_raw = (raw.get("category") or raw.get("event_category") or "").strip()
+
+        # Classify using the FULL text (label + description) for accurate matching
+        full_text = f"{label} {description} {event_type}"
+
+        # Validate category against our taxonomy
+        valid_categories = {"Safety", "Equipment", "Shipment", "Operational", "Environmental"}
+        if category_raw not in valid_categories:
+            category_raw = classify_category(full_text, description)
+
+        valid_severities = {"Critical", "High", "Medium", "Low"}
+        if severity_raw not in valid_severities:
+            severity_raw = classify_severity(full_text, description)
+
+        # Video time: handle both "t_start"/"t_end" (ASK) and "start_time"/"end_time" (Agent)
+        t_start = raw.get("t_start") or raw.get("start_time") or "00:00"
+        t_end = raw.get("t_end") or raw.get("end_time") or "00:00"
 
         event = {
             "id": str(uuid.uuid4()),
             "feed_id": feed_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "category": category_raw if category_raw in ("Safety", "Equipment", "Shipment", "Operational", "Environmental") else classify_category(event_type, description),
-            "severity": severity_raw if severity_raw in ("Critical", "High", "Medium", "Low") else classify_severity(event_type, description),
+            "category": category_raw,
+            "severity": severity_raw,
             "title": title,
             "description": description,
             "source_feed": feed_name,
-            "video_time": f"{raw.get('t_start', '00:00')}-{raw.get('t_end', '00:00')}",
+            "video_time": f"{t_start}-{t_end}",
             "thumbnail_url": raw.get("thumbnail_url") or raw.get("thumbnail") or raw.get("frame_url") or None,
             "confidence": confidence,
             "status": "new",
@@ -148,11 +201,10 @@ def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) 
         logger.info(f"[Parser] Parsed event {i}: title={event['title']}, cat={event['category']}, sev={event['severity']}")
         events.append(event)
 
-    # Also parse the summary as an event if no individual events were extracted well
+    # Fallback: if events had no descriptions, use summary
     summary = analysis_response.get("summary", "")
     if summary and all(e["description"] == "No description available" for e in events):
         logger.info(f"[Parser] Events had no descriptions, using summary as fallback")
-        # Replace event descriptions with the summary
         if len(events) == 1:
             events[0]["description"] = summary
             events[0]["title"] = extract_title(summary)
@@ -162,15 +214,20 @@ def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) 
     return events
 
 
-def analyze_video(file_path: str, feed_id: str, feed_name: str):
+# --- Main analysis function ---
+
+def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: str = "standard"):
     """
     Background task: upload video to NomadicML, analyze, store events.
+
+    analysis_mode:
+      - "standard": AnalysisType.ASK + CustomCategory.DRIVING
+      - "agent":    AnalysisType.GENERAL_AGENT + CustomCategory.ROBOTICS
     """
     conn = None
     try:
-        logger.info(f"[Analysis] Starting for feed {feed_id}: {file_path}")
+        logger.info(f"[Analysis] Starting for feed {feed_id} (mode={analysis_mode}): {file_path}")
 
-        # Import NomadicML SDK
         from nomadicml import NomadicML
         from nomadicml.video import AnalysisType, CustomCategory
 
@@ -180,7 +237,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
 
         client = NomadicML(api_key=api_key)
 
-        # Step 1: Upload video to NomadicML (with retry)
+        # Step 1: Upload video (with retry)
         logger.info(f"[Analysis] Uploading video to NomadicML...")
         upload_response = None
         for attempt in range(3):
@@ -197,14 +254,24 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
         video_id = upload_response["video_id"]
         logger.info(f"[Analysis] Upload complete. video_id={video_id}")
 
-        # Step 2: Run analysis
-        logger.info(f"[Analysis] Running analysis...")
-        analysis = client.analyze(
-            video_id,
-            analysis_type=AnalysisType.ASK,
-            custom_event=WAREHOUSE_PROMPT,
-            custom_category=CustomCategory.DRIVING,
-        )
+        # Step 2: Run analysis based on mode
+        logger.info(f"[Analysis] Running analysis (mode={analysis_mode})...")
+
+        if analysis_mode == "agent":
+            # NomadicML Agent — no custom_event or custom_category allowed
+            analysis = client.analyze(
+                video_id,
+                analysis_type=AnalysisType.GENERAL_AGENT,
+            )
+        else:
+            # Standard ASK mode — supports custom_event for warehouse-specific prompting
+            analysis = client.analyze(
+                video_id,
+                analysis_type=AnalysisType.ASK,
+                custom_event=WAREHOUSE_PROMPT_STANDARD,
+                custom_category=CustomCategory.ROBOTICS,
+            )
+
         logger.info(f"[Analysis] Analysis complete. Raw response keys: {list(analysis.keys()) if isinstance(analysis, dict) else type(analysis)}")
 
         # Step 3: Parse events
@@ -220,6 +287,10 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
 
         # Step 4: Store events in database
         conn = sqlite3.connect(DB_PATH)
+
+        # If re-analyzing, clear old events for this feed first
+        conn.execute("DELETE FROM events WHERE feed_id = ?", (feed_id,))
+
         for event in events:
             conn.execute(
                 """INSERT INTO events (id, feed_id, timestamp, category, severity, title, description,
@@ -235,11 +306,11 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
 
         # Step 5: Update feed status
         conn.execute(
-            "UPDATE feeds SET status = ?, event_count = ? WHERE id = ?",
-            ("completed", len(events), feed_id),
+            "UPDATE feeds SET status = ?, event_count = ?, analysis_mode = ? WHERE id = ?",
+            ("completed", len(events), analysis_mode, feed_id),
         )
         conn.commit()
-        logger.info(f"[Analysis] Feed {feed_id} complete. {len(events)} events stored.")
+        logger.info(f"[Analysis] Feed {feed_id} complete ({analysis_mode}). {len(events)} events stored.")
 
         # Publish real-time update via SSE
         publish_sse({
@@ -248,6 +319,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
             "status": "completed",
             "event_count": len(events),
             "feed_name": feed_name,
+            "analysis_mode": analysis_mode,
         })
 
     except Exception as e:
@@ -261,7 +333,6 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str):
         except Exception as db_err:
             logger.error(f"[Analysis] Failed to update feed status to error: {db_err}")
 
-        # Publish error update via SSE
         publish_sse({
             "type": "feed_update",
             "feed_id": feed_id,

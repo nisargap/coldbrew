@@ -334,11 +334,28 @@ Before signing off on the frontend implementation, verify:
 
 ---
 
+## Your Team
+
+You don't work alone. Here are the other agents and when to engage them:
+
+| Agent | File | When to engage |
+|---|---|---|
+| **Orchestrator** | `ORCHESTRATOR.md` | When a design decision would change the scope (e.g., adding a new page or component not in the LightPRD), or when you need to resolve a disagreement with another agent. |
+| **Frontend** | `agents/FRONTEND.md` | **Your closest collaborator.** They implement your specs. Provide them with exact colors, spacing values, component behavior, and layout wireframes. Review their output and flag anything that doesn't match. If a spec is infeasible, work with them to find an alternative that preserves the intent. |
+| **Backend** | `agents/BACKEND.md` | When you need to understand what data is available for display (e.g., what fields come back from the events API, whether thumbnails are available). Your designs must be grounded in real data, not aspirational. |
+| **NomadicML Expert** | `agents/NOMADICML_EXPERT.md` | When you need to understand what the analysis pipeline produces — event types, categories, severity levels, confidence scores — so your dashboard design accurately represents the data. |
+| **Integration / QA** | `agents/INTEGRATION.md` | When you need someone to verify that the built UI matches your specs. They test the full flow and can catch visual inconsistencies you'd miss in a static review. |
+
+---
+
 ## Reference Files
 
 | File | What to read |
 |---|---|
 | `LightPRD.md` | Full MVP spec |
 | `ORCHESTRATOR.md` | Execution plan and phase milestones |
-| `agents/FRONTEND.md` | Frontend implementation details — coordinate with this agent |
 | `agents/DESIGN.md` | This file |
+| `agents/FRONTEND.md` | Frontend implementation — who implements your specs |
+| `agents/BACKEND.md` | API response shapes — what data drives the UI |
+| `agents/NOMADICML_EXPERT.md` | Analysis output — event structure and categories |
+| `agents/INTEGRATION.md` | QA checklist — visual consistency verification |

@@ -22,6 +22,7 @@ You are the **Orchestrator** for the ColdBrew project. Your job is to coordinate
 | **Backend** | FastAPI app, database models, API endpoints, NomadicML SDK integration | Working API that accepts video uploads, runs analysis, stores events, handles notifications | `agents/BACKEND.md` |
 | **Frontend** | Next.js app, all three pages (Upload, Dashboard, Notification History) | Working UI that talks to the backend API | `agents/FRONTEND.md` |
 | **Product Design** | Visual design system, layout specs, component specs, UX direction | Design specs that the Frontend agent implements | `agents/DESIGN.md` |
+| **NomadicML Expert** | SDK knowledge, prompt engineering, API debugging, analysis optimization | Correct SDK integration, tuned warehouse prompts, API troubleshooting | `agents/NOMADICML_EXPERT.md` |
 | **Integration / QA** | End-to-end wiring, testing the full flow, bug fixes | Confirmation that upload → analysis → dashboard → notify works without errors | `agents/INTEGRATION.md` |
 
 ---
@@ -240,6 +241,7 @@ Escalate to the human only for:
 | `agents/BACKEND.md` | Backend agent instructions, DB schema, API details |
 | `agents/FRONTEND.md` | Frontend agent instructions, component specs, API client |
 | `agents/DESIGN.md` | Product design system, layout specs, visual language |
+| `agents/NOMADICML_EXPERT.md` | NomadicML SDK reference, prompts, response parsing, error handling |
 | `agents/INTEGRATION.md` | QA checklist, test flow, common issues |
 
 ---

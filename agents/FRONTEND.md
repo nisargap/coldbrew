@@ -325,11 +325,28 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 
 ---
 
+## Your Team
+
+You don't work alone. Here are the other agents and when to engage them:
+
+| Agent | File | When to engage |
+|---|---|---|
+| **Orchestrator** | `ORCHESTRATOR.md` | When you need to change an API contract (e.g., you need a new field from the backend), or when you're blocked waiting on another agent. All contract changes go through the Orchestrator. |
+| **Backend** | `agents/BACKEND.md` | When API responses don't match the contract, when you need a new endpoint or field, or when you're debugging a data issue. They serve the data you display — coordinate on shapes and edge cases. |
+| **Product Design** | `agents/DESIGN.md` | **Your closest collaborator.** Follow their specs for colors, typography, spacing, component design, and layout. If you're unsure how something should look, ask them. If their spec conflicts with implementation feasibility, negotiate with them. |
+| **NomadicML Expert** | `agents/NOMADICML_EXPERT.md` | When you need to understand what data the analysis pipeline produces (event structure, confidence scores, categories) so you can display it correctly. Also consult them if you need to show analysis status or progress to the user. |
+| **Integration / QA** | `agents/INTEGRATION.md` | When you need to verify that your pages work end-to-end with the real backend. They will test every interaction on your pages and report bugs. Coordinate with them on expected behavior for edge cases (empty states, errors, loading). |
+
+---
+
 ## Reference Files
 
 | File | What to read |
 |---|---|
 | `LightPRD.md` | Full MVP spec |
 | `ORCHESTRATOR.md` | Execution plan, API contract, phase milestones |
-| `agents/DESIGN.md` | Visual design direction and component specs |
 | `agents/FRONTEND.md` | This file |
+| `agents/BACKEND.md` | API endpoint details — what you're calling |
+| `agents/DESIGN.md` | Visual design system — colors, layout, component specs |
+| `agents/NOMADICML_EXPERT.md` | SDK response shapes — what data to expect from analysis |
+| `agents/INTEGRATION.md` | Test checklist — what QA will verify on your pages |

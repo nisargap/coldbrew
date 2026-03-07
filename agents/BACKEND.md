@@ -264,10 +264,28 @@ NOMADIC_SDK_API_KEY=your_key_here uvicorn main:app --reload --port 8000
 
 ---
 
+## Your Team
+
+You don't work alone. Here are the other agents and when to engage them:
+
+| Agent | File | When to engage |
+|---|---|---|
+| **Orchestrator** | `ORCHESTRATOR.md` | API contract changes, scope questions, any blocker that affects the frontend. Go here first if you need to change an endpoint shape. |
+| **Frontend** | `agents/FRONTEND.md` | When you change response formats, add new fields, or need to understand what the frontend expects. They consume your API — coordinate on data shapes. |
+| **Product Design** | `agents/DESIGN.md` | When you need to serve assets (thumbnails, video clips) and need to understand what dimensions, formats, or URLs the design expects. |
+| **NomadicML Expert** | `agents/NOMADICML_EXPERT.md` | **Your closest collaborator.** Any question about `client.upload()`, `client.analyze()`, response parsing, error codes, prompt tuning, or SDK behavior. This agent owns the warehouse analysis prompt and the event parsing logic. Consult them before writing any NomadicML SDK code. |
+| **Integration / QA** | `agents/INTEGRATION.md` | When you need help reproducing a bug, want to verify your endpoints work correctly, or need to coordinate on test data and demo prep. They test everything you build. |
+
+---
+
 ## Reference Files
 
 | File | What to read |
 |---|---|
 | `LightPRD.md` | Full MVP spec |
-| `ORCHESTRATOR.md` | Execution plan and phase milestones |
+| `ORCHESTRATOR.md` | Execution plan, API contract, phase milestones |
 | `agents/BACKEND.md` | This file |
+| `agents/FRONTEND.md` | Frontend types and API client — what they expect from you |
+| `agents/NOMADICML_EXPERT.md` | SDK reference, warehouse prompt, response parsing |
+| `agents/DESIGN.md` | Visual specs — thumbnail sizes, asset serving expectations |
+| `agents/INTEGRATION.md` | Test checklist, common issues, bug reporting format |

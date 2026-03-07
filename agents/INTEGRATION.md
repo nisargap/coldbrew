@@ -199,12 +199,28 @@ In Phase 5 (Hours 11–12), you own:
 
 ---
 
+## Your Team
+
+You interact with every agent. Here's when to engage each one:
+
+| Agent | File | When to engage |
+|---|---|---|
+| **Orchestrator** | `ORCHESTRATOR.md` | **Report all blockers here first.** When a bug prevents the core flow from working, when two agents disagree on expected behavior, or when the demo is at risk. The Orchestrator routes fixes to the right agent. |
+| **Backend** | `agents/BACKEND.md` | When an API endpoint returns unexpected data, wrong status codes, or errors. When you need test data seeded in the database. When CORS or networking issues arise. Provide them with exact curl commands to reproduce the bug. |
+| **Frontend** | `agents/FRONTEND.md` | When the UI doesn't match expected behavior — wrong colors, broken layout, missing states, interaction bugs. Provide them with exact steps to reproduce and what the correct behavior should be (reference the Design Agent's specs). |
+| **Product Design** | `agents/DESIGN.md` | When you notice visual inconsistencies that the Design Agent should weigh in on — does this look right? Is this the intended empty state? Ask them to verify the built product matches their specs. |
+| **NomadicML Expert** | `agents/NOMADICML_EXPERT.md` | When analysis returns unexpected results — empty events, wrong categories, low confidence scores, API timeouts. They can help determine if the issue is the prompt, the video, or the SDK. Also consult them when setting up demo videos. |
+
+---
+
 ## Reference Files
 
 | File | What to read |
 |---|---|
 | `LightPRD.md` | Full MVP spec |
 | `ORCHESTRATOR.md` | Execution plan, API contract, phase milestones |
-| `agents/BACKEND.md` | Backend API details and error handling |
-| `agents/FRONTEND.md` | Frontend pages, components, and behavior |
 | `agents/INTEGRATION.md` | This file |
+| `agents/BACKEND.md` | Backend API details, endpoints, error handling |
+| `agents/FRONTEND.md` | Frontend pages, components, expected behavior |
+| `agents/DESIGN.md` | Visual specs — verify UI matches these |
+| `agents/NOMADICML_EXPERT.md` | SDK behavior — debug analysis issues |

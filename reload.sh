@@ -16,7 +16,8 @@ BACKEND_PID=$!
 
 echo "🚀 Starting frontend (port 3000)..."
 cd "$SCRIPT_DIR/frontend"
-nohup NEXT_PUBLIC_API_URL=http://localhost:8000 npx next dev -p 3000 > /tmp/coldbrew-frontend.log 2>&1 &
+export NEXT_PUBLIC_API_URL=http://localhost:8000
+nohup npx next dev -p 3000 > /tmp/coldbrew-frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 echo "⏳ Waiting for services..."

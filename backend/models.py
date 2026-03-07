@@ -26,6 +26,7 @@ class FeedResponse(BaseModel):
     status: str
     error_message: Optional[str] = None
     analysis_mode: str = "standard"
+    video_url: Optional[str] = None
     created_at: str
     event_count: int
 

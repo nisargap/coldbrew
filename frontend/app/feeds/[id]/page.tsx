@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -8,6 +8,7 @@ import {
   Bell,
   Check,
   X,
+  Play,
   ChevronDown,
   FileVideo,
   CheckCircle2,
@@ -179,6 +180,11 @@ export default function FeedDetailPage() {
         </span>
         <span className="text-xs text-zinc-600 font-mono">{formatTime(feed.created_at)}</span>
       </div>
+
+      {/* Video player */}
+      {feed.video_url && (
+        <VideoPlayer videoUrl={feed.video_url} feedName={feed.feed_name} />
+      )}
 
       {/* Action bar */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -468,6 +474,39 @@ export default function FeedDetailPage() {
       {toast && (
         <div className="fixed bottom-6 right-6 bg-[#18181B] border border-[#27272A] text-zinc-200 text-sm px-4 py-3 rounded-lg shadow-xl z-50 animate-[fadeIn_150ms_ease-in]">
           {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const VIDEO_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function VideoPlayer({ videoUrl, feedName }: { videoUrl: string; feedName: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const fullUrl = `${VIDEO_BASE}${videoUrl}`;
+
+  return (
+    <div className="mb-5">
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex items-center gap-2 text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2 hover:text-zinc-300 transition-colors"
+      >
+        <Play size={12} className={isCollapsed ? "" : "text-blue-400"} />
+        {isCollapsed ? "Show Video" : "Video Feed"}
+      </button>
+      {!isCollapsed && (
+        <div className="rounded-lg overflow-hidden border border-[#27272A] bg-black">
+          <video
+            ref={videoRef}
+            src={fullUrl}
+            controls
+            className="w-full max-h-[400px] object-contain bg-black"
+            preload="metadata"
+          >
+            Your browser does not support video playback.
+          </video>
         </div>
       )}
     </div>

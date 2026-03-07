@@ -24,13 +24,23 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 VALID_MODES = {"standard", "agent"}
 
 
+def _video_url_from_path(file_path: str) -> str | None:
+    """Convert local file path to a URL served by the /uploads mount."""
+    if not file_path:
+        return None
+    basename = os.path.basename(file_path)
+    return f"/uploads/{basename}"
+
+
 def _row_to_feed(row: sqlite3.Row) -> FeedResponse:
+    file_path = row["file_path"] if "file_path" in row.keys() else None
     return FeedResponse(
         feed_id=row["id"],
         feed_name=row["feed_name"],
         status=row["status"],
         error_message=row["error_message"] if "error_message" in row.keys() else None,
         analysis_mode=row["analysis_mode"] if "analysis_mode" in row.keys() else "standard",
+        video_url=_video_url_from_path(file_path),
         created_at=row["created_at"],
         event_count=row["event_count"],
     )
@@ -80,7 +90,7 @@ async def upload_feed(
 @router.get("", response_model=list[FeedResponse])
 def list_feeds(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute(
-        "SELECT id, feed_name, status, error_message, analysis_mode, created_at, event_count FROM feeds ORDER BY created_at DESC"
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, created_at, event_count FROM feeds ORDER BY created_at DESC"
     ).fetchall()
     return [_row_to_feed(row) for row in rows]
 
@@ -160,7 +170,7 @@ def reanalyze_feed(
 @router.get("/{feed_id}", response_model=FeedResponse)
 def get_feed(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        "SELECT id, feed_name, status, error_message, analysis_mode, created_at, event_count FROM feeds WHERE id = ?",
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, created_at, event_count FROM feeds WHERE id = ?",
         (feed_id,),
     ).fetchone()
     if not row:

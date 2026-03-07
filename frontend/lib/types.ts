@@ -6,6 +6,7 @@ export interface Feed {
   status: "processing" | "completed" | "error";
   error_message?: string | null;
   analysis_mode: AnalysisMode;
+  video_url?: string | null;
   created_at: string;
   event_count: number;
 }

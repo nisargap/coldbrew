@@ -5,6 +5,7 @@ node_modules/
 backend/uploads/
 
 # Environment
+.env
 backend/.env
 
 # Python

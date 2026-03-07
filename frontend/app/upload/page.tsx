@@ -47,12 +47,17 @@ export default function UploadPage() {
     return () => unsub();
   }, [fetchFeeds]);
 
+  const autoFillFeedName = (f: File) => {
+    setFeedName((prev) => prev.trim() ? prev : f.name.replace(/\.[^.]+$/, ""));
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const dropped = e.dataTransfer.files[0];
     if (dropped && (dropped.type === "video/mp4" || dropped.type === "video/quicktime")) {
       setFile(dropped);
+      autoFillFeedName(dropped);
       setError(null);
     } else {
       setError("Please upload an MP4 or MOV file.");
@@ -63,6 +68,7 @@ export default function UploadPage() {
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
+      autoFillFeedName(selected);
       setError(null);
     }
   };

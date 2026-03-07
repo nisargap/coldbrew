@@ -210,6 +210,12 @@ export default function DashboardPage() {
                         <ExternalLink size={9} />
                       </button>
                       <span className="text-[11px] text-zinc-600">·</span>
+                      <span className={`text-[11px] font-mono ${
+                        event.confidence >= 0.7 ? "text-zinc-500" : "text-amber-500/70"
+                      }`}>
+                        {(event.confidence * 100).toFixed(0)}%
+                      </span>
+                      <span className="text-[11px] text-zinc-600">·</span>
                       <span className="text-xs text-zinc-600 font-mono">
                         {formatTime(event.timestamp)}
                       </span>

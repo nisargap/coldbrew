@@ -11,16 +11,19 @@ import {
   ChevronRight,
   Bot,
   Zap,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { uploadFeed, getFeeds, subscribeFeedUpdates } from "@/lib/api";
-import type { Feed, AnalysisMode } from "@/lib/types";
-import { ANALYSIS_MODES } from "@/lib/types";
+import type { Feed, AnalysisMode, ConfidenceLevel } from "@/lib/types";
+import { ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
 
 export default function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [feedName, setFeedName] = useState("");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("standard");
+  const [confidenceLevel, setConfidenceLevel] = useState<ConfidenceLevel>("low");
   const [uploading, setUploading] = useState(false);
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -78,7 +81,7 @@ export default function UploadPage() {
     setUploading(true);
     setError(null);
     try {
-      await uploadFeed(file, feedName.trim(), analysisMode);
+      await uploadFeed(file, feedName.trim(), analysisMode, confidenceLevel);
       setFile(null);
       setFeedName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -192,6 +195,54 @@ export default function UploadPage() {
         </div>
       </div>
 
+      {/* Confidence level selector */}
+      <div className="mt-4">
+        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2 block">
+          Confidence Level
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          {CONFIDENCE_LEVELS.map((level) => (
+            <button
+              key={level.value}
+              onClick={() => setConfidenceLevel(level.value)}
+              className={`flex items-start gap-3 p-3 rounded-lg border text-left transition-all ${
+                confidenceLevel === level.value
+                  ? level.value === "high"
+                    ? "border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20"
+                    : "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/20"
+                  : "border-[#27272A] hover:border-zinc-600"
+              }`}
+            >
+              <div className="mt-0.5">
+                {level.value === "high" ? (
+                  <ShieldCheck
+                    size={16}
+                    className={confidenceLevel === level.value ? "text-emerald-400" : "text-zinc-500"}
+                  />
+                ) : (
+                  <ShieldAlert
+                    size={16}
+                    className={confidenceLevel === level.value ? "text-amber-400" : "text-zinc-500"}
+                  />
+                )}
+              </div>
+              <div>
+                <p
+                  className={`text-[13px] font-medium ${
+                    confidenceLevel === level.value ? "text-zinc-100" : "text-zinc-400"
+                  }`}
+                >
+                  {level.label}
+                </p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">
+                  {level.description}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Feed name + upload button */}
       <div className="mt-4 flex gap-3">
         <input
@@ -254,6 +305,7 @@ export default function UploadPage() {
                     <FileVideo size={16} className="text-zinc-500" />
                     <span className="text-[13px] text-zinc-200">{feed.feed_name}</span>
                     <ModeBadge mode={feed.analysis_mode} />
+                    <ConfidenceBadge level={feed.confidence_level} />
                   </div>
                   <div className="flex items-center gap-4">
                     {feed.status === "completed" && (
@@ -297,6 +349,23 @@ function ModeBadge({ mode }: { mode: string }) {
   return (
     <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">
       Standard
+    </span>
+  );
+}
+
+function ConfidenceBadge({ level }: { level: string }) {
+  if (level === "high") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <ShieldCheck size={10} />
+        High
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+      <ShieldAlert size={10} />
+      Low
     </span>
   );
 }

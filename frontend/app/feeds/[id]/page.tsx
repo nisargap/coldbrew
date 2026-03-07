@@ -26,8 +26,8 @@ import {
   reanalyzeFeed,
   subscribeFeedUpdates,
 } from "@/lib/api";
-import type { Event, Feed, Persona, AnalysisMode } from "@/lib/types";
-import { PERSONAS, SEVERITY_COLORS, ANALYSIS_MODES } from "@/lib/types";
+import type { Event, Feed, Persona, AnalysisMode, ConfidenceLevel } from "@/lib/types";
+import { PERSONAS, SEVERITY_COLORS, ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
 
 export default function FeedDetailPage() {
   const params = useParams();
@@ -42,6 +42,7 @@ export default function FeedDetailPage() {
   const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [showReanalyzeConfirm, setShowReanalyzeConfirm] = useState(false);
   const [reanalyzeMode, setReanalyzeMode] = useState<AnalysisMode>("agent");
+  const [reanalyzeConfidence, setReanalyzeConfidence] = useState<ConfidenceLevel>("low");
   const [reanalyzing, setReanalyzing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -113,8 +114,8 @@ export default function FeedDetailPage() {
     setReanalyzing(true);
     setShowReanalyzeConfirm(false);
     try {
-      await reanalyzeFeed(feedId, reanalyzeMode);
-      showToast(`Re-analysis started with ${reanalyzeMode === "agent" ? "Agent (Robotic Action Segmentation)" : "Standard"} mode.`);
+      await reanalyzeFeed(feedId, reanalyzeMode, reanalyzeConfidence);
+      showToast(`Re-analysis started with ${reanalyzeMode === "agent" ? "Agent" : "Standard"} mode (${reanalyzeConfidence} confidence).`);
       fetchData();
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Re-analysis failed");
@@ -398,43 +399,72 @@ export default function FeedDetailPage() {
             </p>
 
             <div className="space-y-2 mb-4">
-              {ANALYSIS_MODES.map((mode) => (
-                <button
-                  key={mode.value}
-                  onClick={() => setReanalyzeMode(mode.value)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-lg border text-left transition-all ${
-                    reanalyzeMode === mode.value
-                      ? mode.value === "agent"
-                        ? "border-purple-500/50 bg-purple-500/5 ring-1 ring-purple-500/20"
-                        : "border-blue-500/50 bg-blue-500/5 ring-1 ring-blue-500/20"
-                      : "border-[#27272A] hover:border-zinc-600"
-                  }`}
-                >
-                  <div className="mt-0.5">
-                    {mode.value === "agent" ? (
-                      <Bot
-                        size={16}
-                        className={reanalyzeMode === mode.value ? "text-purple-400" : "text-zinc-500"}
-                      />
-                    ) : (
-                      <Zap
-                        size={16}
-                        className={reanalyzeMode === mode.value ? "text-blue-400" : "text-zinc-500"}
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <p
-                      className={`text-[13px] font-medium ${
-                        reanalyzeMode === mode.value ? "text-zinc-100" : "text-zinc-400"
-                      }`}
-                    >
-                      {mode.label}
-                    </p>
-                    <p className="text-[11px] text-zinc-600 mt-0.5">{mode.description}</p>
-                  </div>
-                </button>
-              ))}
+              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Analysis Mode</label>
+              <div className="mt-1 space-y-2">
+                {ANALYSIS_MODES.map((mode) => (
+                  <button
+                    key={mode.value}
+                    onClick={() => setReanalyzeMode(mode.value)}
+                    className={`w-full flex items-start gap-3 p-3 rounded-lg border text-left transition-all ${
+                      reanalyzeMode === mode.value
+                        ? mode.value === "agent"
+                          ? "border-purple-500/50 bg-purple-500/5 ring-1 ring-purple-500/20"
+                          : "border-blue-500/50 bg-blue-500/5 ring-1 ring-blue-500/20"
+                        : "border-[#27272A] hover:border-zinc-600"
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      {mode.value === "agent" ? (
+                        <Bot
+                          size={16}
+                          className={reanalyzeMode === mode.value ? "text-purple-400" : "text-zinc-500"}
+                        />
+                      ) : (
+                        <Zap
+                          size={16}
+                          className={reanalyzeMode === mode.value ? "text-blue-400" : "text-zinc-500"}
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <p
+                        className={`text-[13px] font-medium ${
+                          reanalyzeMode === mode.value ? "text-zinc-100" : "text-zinc-400"
+                        }`}
+                      >
+                        {mode.label}
+                      </p>
+                      <p className="text-[11px] text-zinc-600 mt-0.5">{mode.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Confidence Level</label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {CONFIDENCE_LEVELS.map((level) => (
+                  <button
+                    key={level.value}
+                    onClick={() => setReanalyzeConfidence(level.value)}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all ${
+                      reanalyzeConfidence === level.value
+                        ? level.value === "high"
+                          ? "border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20"
+                          : "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/20"
+                        : "border-[#27272A] hover:border-zinc-600"
+                    }`}
+                  >
+                    <div>
+                      <p className={`text-[12px] font-medium ${
+                        reanalyzeConfidence === level.value ? "text-zinc-100" : "text-zinc-400"
+                      }`}>{level.label}</p>
+                      <p className="text-[10px] text-zinc-600 mt-0.5">{level.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex justify-end gap-2">

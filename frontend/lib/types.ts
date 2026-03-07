@@ -1,4 +1,5 @@
 export type AnalysisMode = "standard" | "agent";
+export type ConfidenceLevel = "low" | "high";
 
 export interface Feed {
   feed_id: string;
@@ -6,6 +7,7 @@ export interface Feed {
   status: "processing" | "completed" | "error";
   error_message?: string | null;
   analysis_mode: AnalysisMode;
+  confidence_level: ConfidenceLevel;
   video_url?: string | null;
   created_at: string;
   event_count: number;
@@ -14,6 +16,11 @@ export interface Feed {
 export const ANALYSIS_MODES: { value: AnalysisMode; label: string; description: string }[] = [
   { value: "standard", label: "Standard", description: "Custom event detection (ASK)" },
   { value: "agent", label: "Agent — Robotic Action Segmentation", description: "NomadicML Agent with ROBOTICS category" },
+];
+
+export const CONFIDENCE_LEVELS: { value: ConfidenceLevel; label: string; description: string }[] = [
+  { value: "high", label: "High Confidence", description: "Only confident detections" },
+  { value: "low", label: "Low Confidence", description: "Include uncertain detections" },
 ];
 
 export interface Event {

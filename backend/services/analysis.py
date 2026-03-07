@@ -216,17 +216,21 @@ def parse_nomadic_events(analysis_response: dict, feed_id: str, feed_name: str) 
 
 # --- Main analysis function ---
 
-def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: str = "standard"):
+def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: str = "standard", confidence_level: str = "low"):
     """
     Background task: upload video to NomadicML, analyze, store events.
 
     analysis_mode:
-      - "standard": AnalysisType.ASK + CustomCategory.DRIVING
-      - "agent":    AnalysisType.GENERAL_AGENT + CustomCategory.ROBOTICS
+      - "standard": AnalysisType.ASK + CustomCategory.ROBOTICS
+      - "agent":    AnalysisType.GENERAL_AGENT
+
+    confidence_level:
+      - "low":  returns more events including lower-confidence detections
+      - "high": returns only high-confidence detections
     """
     conn = None
     try:
-        logger.info(f"[Analysis] Starting for feed {feed_id} (mode={analysis_mode}): {file_path}")
+        logger.info(f"[Analysis] Starting for feed {feed_id} (mode={analysis_mode}, confidence={confidence_level}): {file_path}")
 
         from nomadicml import NomadicML
         from nomadicml.video import AnalysisType, CustomCategory
@@ -262,6 +266,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
             analysis = client.analyze(
                 video_id,
                 analysis_type=AnalysisType.GENERAL_AGENT,
+                confidence=confidence_level,
             )
         else:
             # Standard ASK mode — supports custom_event for warehouse-specific prompting
@@ -270,6 +275,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
                 analysis_type=AnalysisType.ASK,
                 custom_event=WAREHOUSE_PROMPT_STANDARD,
                 custom_category=CustomCategory.ROBOTICS,
+                confidence=confidence_level,
             )
 
         logger.info(f"[Analysis] Analysis complete. Raw response keys: {list(analysis.keys()) if isinstance(analysis, dict) else type(analysis)}")
@@ -281,9 +287,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
             logger.warning(f"[Analysis] Unexpected response type: {type(analysis)}")
             events = []
 
-        # Filter by confidence
-        events = [e for e in events if e.get("confidence", 0) >= 0.7]
-        logger.info(f"[Analysis] {len(events)} events after confidence filtering")
+        logger.info(f"[Analysis] {len(events)} events parsed (confidence_level={confidence_level})")
 
         # Step 4: Store events in database
         conn = sqlite3.connect(DB_PATH)

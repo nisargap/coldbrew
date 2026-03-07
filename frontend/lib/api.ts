@@ -1,10 +1,11 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function uploadFeed(file: File, feedName: string, analysisMode: string = "standard") {
+export async function uploadFeed(file: File, feedName: string, analysisMode: string = "standard", confidenceLevel: string = "low") {
   const form = new FormData();
   form.append("file", file);
   form.append("feed_name", feedName);
   form.append("analysis_mode", analysisMode);
+  form.append("confidence_level", confidenceLevel);
   const res = await fetch(`${API_URL}/api/feeds/upload`, {
     method: "POST",
     body: form,
@@ -16,8 +17,9 @@ export async function uploadFeed(file: File, feedName: string, analysisMode: str
   return res.json();
 }
 
-export async function reanalyzeFeed(feedId: string, analysisMode: string = "agent") {
-  const res = await fetch(`${API_URL}/api/feeds/${feedId}/reanalyze?analysis_mode=${analysisMode}`, {
+export async function reanalyzeFeed(feedId: string, analysisMode: string = "agent", confidenceLevel: string = "low") {
+  const params = new URLSearchParams({ analysis_mode: analysisMode, confidence_level: confidenceLevel });
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/reanalyze?${params}`, {
     method: "POST",
   });
   if (!res.ok) {
@@ -39,11 +41,12 @@ export async function getFeed(feedId: string) {
   return res.json();
 }
 
-export async function getEvents(params?: { category?: string; severity?: string; feed_id?: string }) {
+export async function getEvents(params?: { category?: string; severity?: string; feed_id?: string; min_confidence?: number }) {
   const filtered: Record<string, string> = {};
   if (params?.category) filtered.category = params.category;
   if (params?.severity) filtered.severity = params.severity;
   if (params?.feed_id) filtered.feed_id = params.feed_id;
+  if (params?.min_confidence !== undefined) filtered.min_confidence = String(params.min_confidence);
   const query = new URLSearchParams(filtered).toString();
   const res = await fetch(`${API_URL}/api/events${query ? `?${query}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch events");

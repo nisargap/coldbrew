@@ -18,6 +18,7 @@ class FeedUploadResponse(BaseModel):
     feed_id: str
     status: str
     analysis_mode: str
+    confidence_level: str = "low"
 
 
 class FeedResponse(BaseModel):
@@ -26,6 +27,7 @@ class FeedResponse(BaseModel):
     status: str
     error_message: Optional[str] = None
     analysis_mode: str = "standard"
+    confidence_level: str = "low"
     video_url: Optional[str] = None
     created_at: str
     event_count: int

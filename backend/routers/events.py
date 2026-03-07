@@ -34,6 +34,7 @@ def list_events(
     category: Optional[str] = Query(None),
     severity: Optional[str] = Query(None),
     feed_id: Optional[str] = Query(None),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
     db: sqlite3.Connection = Depends(get_db),
 ):
     query = "SELECT * FROM events WHERE 1=1"
@@ -48,6 +49,9 @@ def list_events(
     if feed_id:
         query += " AND feed_id = ?"
         params.append(feed_id)
+    if min_confidence is not None:
+        query += " AND confidence >= ?"
+        params.append(min_confidence)
 
     query += " ORDER BY created_at DESC"
     rows = db.execute(query, params).fetchall()

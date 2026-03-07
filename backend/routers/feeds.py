@@ -40,10 +40,14 @@ def _row_to_feed(row: sqlite3.Row) -> FeedResponse:
         status=row["status"],
         error_message=row["error_message"] if "error_message" in row.keys() else None,
         analysis_mode=row["analysis_mode"] if "analysis_mode" in row.keys() else "standard",
+        confidence_level=row["confidence_level"] if "confidence_level" in row.keys() else "low",
         video_url=_video_url_from_path(file_path),
         created_at=row["created_at"],
         event_count=row["event_count"],
     )
+
+
+VALID_CONFIDENCE_LEVELS = {"low", "high"}
 
 
 @router.post("/upload", response_model=FeedUploadResponse, status_code=201)
@@ -52,6 +56,7 @@ async def upload_feed(
     file: UploadFile = File(...),
     feed_name: str = Form(...),
     analysis_mode: str = Form("standard"),
+    confidence_level: str = Form("low"),
     db: sqlite3.Connection = Depends(get_db),
 ):
     # Validate file type
@@ -60,6 +65,9 @@ async def upload_feed(
 
     if analysis_mode not in VALID_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid analysis mode. Must be one of: {VALID_MODES}")
+
+    if confidence_level not in VALID_CONFIDENCE_LEVELS:
+        raise HTTPException(status_code=400, detail=f"Invalid confidence level. Must be one of: {VALID_CONFIDENCE_LEVELS}")
 
     feed_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -74,23 +82,23 @@ async def upload_feed(
 
     # Create feed record
     db.execute(
-        "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, created_at, event_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (feed_id, feed_name, file_path, "processing", analysis_mode, now, 0),
+        "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, confidence_level, created_at, event_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (feed_id, feed_name, file_path, "processing", analysis_mode, confidence_level, now, 0),
     )
     db.commit()
 
-    logger.info(f"Feed {feed_id} created: {feed_name} (mode={analysis_mode}) -> {file_path}")
+    logger.info(f"Feed {feed_id} created: {feed_name} (mode={analysis_mode}, confidence={confidence_level}) -> {file_path}")
 
     # Kick off analysis in background
-    background_tasks.add_task(analyze_video, file_path, feed_id, feed_name, analysis_mode)
+    background_tasks.add_task(analyze_video, file_path, feed_id, feed_name, analysis_mode, confidence_level)
 
-    return FeedUploadResponse(feed_id=feed_id, status="processing", analysis_mode=analysis_mode)
+    return FeedUploadResponse(feed_id=feed_id, status="processing", analysis_mode=analysis_mode, confidence_level=confidence_level)
 
 
 @router.get("", response_model=list[FeedResponse])
 def list_feeds(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, created_at, event_count FROM feeds ORDER BY created_at DESC"
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, created_at, event_count FROM feeds ORDER BY created_at DESC"
     ).fetchall()
     return [_row_to_feed(row) for row in rows]
 
@@ -130,11 +138,15 @@ def reanalyze_feed(
     feed_id: str,
     background_tasks: BackgroundTasks,
     analysis_mode: str = "agent",
+    confidence_level: str = "low",
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Re-analyze an existing feed with a different analysis mode."""
     if analysis_mode not in VALID_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid analysis mode. Must be one of: {VALID_MODES}")
+
+    if confidence_level not in VALID_CONFIDENCE_LEVELS:
+        raise HTTPException(status_code=400, detail=f"Invalid confidence level. Must be one of: {VALID_CONFIDENCE_LEVELS}")
 
     row = db.execute("SELECT id, feed_name, file_path, status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
     if not row:
@@ -145,12 +157,12 @@ def reanalyze_feed(
 
     # Reset feed to processing state
     db.execute(
-        "UPDATE feeds SET status = ?, error_message = NULL, analysis_mode = ?, event_count = 0 WHERE id = ?",
-        ("processing", analysis_mode, feed_id),
+        "UPDATE feeds SET status = ?, error_message = NULL, analysis_mode = ?, confidence_level = ?, event_count = 0 WHERE id = ?",
+        ("processing", analysis_mode, confidence_level, feed_id),
     )
     db.commit()
 
-    logger.info(f"Feed {feed_id} re-analysis started (mode={analysis_mode})")
+    logger.info(f"Feed {feed_id} re-analysis started (mode={analysis_mode}, confidence={confidence_level})")
 
     # Publish SSE so frontend updates immediately
     publish_sse({
@@ -162,15 +174,15 @@ def reanalyze_feed(
     })
 
     # Kick off analysis in background
-    background_tasks.add_task(analyze_video, row["file_path"], feed_id, row["feed_name"], analysis_mode)
+    background_tasks.add_task(analyze_video, row["file_path"], feed_id, row["feed_name"], analysis_mode, confidence_level)
 
-    return FeedUploadResponse(feed_id=feed_id, status="processing", analysis_mode=analysis_mode)
+    return FeedUploadResponse(feed_id=feed_id, status="processing", analysis_mode=analysis_mode, confidence_level=confidence_level)
 
 
 @router.get("/{feed_id}", response_model=FeedResponse)
 def get_feed(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, created_at, event_count FROM feeds WHERE id = ?",
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, created_at, event_count FROM feeds WHERE id = ?",
         (feed_id,),
     ).fetchone()
     if not row:

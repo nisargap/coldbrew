@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from database import create_tables
 from routers import feeds, events, notifications
+from services.telegram import start_bot, stop_bot
 
 # Logging
 logging.basicConfig(
@@ -50,10 +51,16 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     create_tables()
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    await start_bot()
     logger.info("ColdBrew API started. Database initialized.")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await stop_bot()
 
 
 @app.get("/api/health")

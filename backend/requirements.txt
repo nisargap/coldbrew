@@ -5,3 +5,5 @@ python-multipart==0.0.18
 nomadicml>=0.1.38
 aiofiles==24.1.0
 python-dotenv==1.0.1
+python-telegram-bot==21.10
+anthropic>=0.39.0

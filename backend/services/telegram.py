@@ -9,6 +9,7 @@ import logging
 
 import anthropic
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -30,6 +31,10 @@ SYSTEM_PROMPT = (
     "You help warehouse operators monitor and respond to events detected from CCTV footage.\n\n"
     "Keep responses concise — these are busy warehouse workers on their phones. "
     "Use severity icons: 🔴 Critical, 🟠 High, 🟡 Medium, 🔵 Low.\n\n"
+    "FORMATTING: Use Telegram HTML for formatting. "
+    "Supported tags: <b>bold</b>, <i>italic</i>, <code>code</code>. "
+    "Do NOT use markdown syntax like **bold** or *italic*. "
+    "Escape &, <, > as &amp; &lt; &gt; when they appear in plain text (not as tags).\n\n"
     "Always use your tools to get real data. Never make up events or IDs. "
     "When referring to events, include the title so the user can identify them. "
     "Confirm actions taken."
@@ -101,7 +106,11 @@ async def _handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE):
         history.append({"role": "assistant", "content": reply})
 
         for i in range(0, len(reply), 4000):
-            await update.message.reply_text(reply[i : i + 4000])
+            chunk = reply[i : i + 4000]
+            try:
+                await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+            except Exception:
+                await update.message.reply_text(chunk)
     except Exception as e:
         logger.error(f"[Telegram] Error: {e}", exc_info=True)
         await update.message.reply_text("Something went wrong — please try again.")

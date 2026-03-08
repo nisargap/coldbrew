@@ -55,7 +55,10 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 async def on_startup():
     create_tables()
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    await start_bot()
+    try:
+        await start_bot()
+    except Exception as e:
+        logger.warning(f"Telegram bot failed to start (non-fatal): {e}")
     logger.info("ColdBrew API started. Database initialized.")
 
 

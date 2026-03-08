@@ -63,7 +63,7 @@ def list_events(
 def get_event(event_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found. It may have been deleted during re-analysis.")
     return row_to_event(row)
 
 
@@ -74,11 +74,11 @@ def update_event_status(
     db: sqlite3.Connection = Depends(get_db),
 ):
     if body.status not in VALID_STATUSES:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'. Must be one of: {sorted(VALID_STATUSES)}")
 
     row = db.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found. It may have been deleted during re-analysis.")
 
     db.execute("UPDATE events SET status = ? WHERE id = ?", (body.status, event_id))
     db.commit()

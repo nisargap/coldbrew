@@ -33,11 +33,11 @@ def send_notification(
     db: sqlite3.Connection = Depends(get_db),
 ):
     if not body.event_ids:
-        raise HTTPException(status_code=400, detail="No events selected")
+        raise HTTPException(status_code=400, detail="No events selected. Select at least one event to notify about.")
     if not body.persona_ids:
-        raise HTTPException(status_code=400, detail="No personas selected")
+        raise HTTPException(status_code=400, detail="No recipients selected. Select at least one persona to send the notification to.")
     if not body.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
+        raise HTTPException(status_code=400, detail="Notification message is required and cannot be empty.")
 
     # Resolve personas from the database
     sent_to = []
@@ -47,7 +47,7 @@ def send_notification(
             sent_to.append(persona)
 
     if not sent_to:
-        raise HTTPException(status_code=400, detail="No valid personas found")
+        raise HTTPException(status_code=400, detail=f"None of the provided persona IDs are valid: {body.persona_ids}. Check /api/personas for available recipients.")
 
     notification_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()

@@ -150,16 +150,20 @@ async def start_bot():
         logger.warning("[Telegram] ANTHROPIC_API_KEY not set — bot disabled")
         return
 
-    _bot_app = Application.builder().token(token).build()
-    _bot_app.add_handler(CommandHandler("start", _start_command))
-    _bot_app.add_handler(CommandHandler("clear", _clear_command))
-    _bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))
+    try:
+        _bot_app = Application.builder().token(token).build()
+        _bot_app.add_handler(CommandHandler("start", _start_command))
+        _bot_app.add_handler(CommandHandler("clear", _clear_command))
+        _bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))
 
-    await _bot_app.initialize()
-    await _bot_app.start()
-    await _bot_app.updater.start_polling()
+        await _bot_app.initialize()
+        await _bot_app.start()
+        await _bot_app.updater.start_polling(drop_pending_updates=True)
 
-    logger.info("[Telegram] Bot started (polling mode)")
+        logger.info("[Telegram] Bot started (polling mode)")
+    except Exception as e:
+        logger.error(f"[Telegram] Bot startup failed: {e}")
+        _bot_app = None
 
 
 async def stop_bot():

@@ -86,13 +86,19 @@ async def upload_feed(
 ):
     # Validate file type
     if file.content_type not in ("video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"):
-        raise HTTPException(status_code=400, detail="Unsupported file type. Upload MP4, MOV, AVI, or WEBM.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{file.content_type}'. Accepted formats: MP4, MOV, AVI, WEBM."
+        )
 
     if analysis_mode not in VALID_MODES:
-        raise HTTPException(status_code=400, detail=f"Invalid analysis mode. Must be one of: {VALID_MODES}")
+        raise HTTPException(status_code=400, detail=f"Invalid analysis mode '{analysis_mode}'. Must be one of: {sorted(VALID_MODES)}")
 
     if confidence_level not in VALID_CONFIDENCE_LEVELS:
-        raise HTTPException(status_code=400, detail=f"Invalid confidence level. Must be one of: {VALID_CONFIDENCE_LEVELS}")
+        raise HTTPException(status_code=400, detail=f"Invalid confidence level '{confidence_level}'. Must be one of: {sorted(VALID_CONFIDENCE_LEVELS)}")
+
+    if not feed_name.strip():
+        raise HTTPException(status_code=400, detail="Feed name is required and cannot be empty.")
 
     feed_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -102,15 +108,23 @@ async def upload_feed(
     ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
     file_path = os.path.join(UPLOAD_DIR, f"{feed_id}{ext}")
 
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    try:
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    except Exception as e:
+        logger.error(f"Failed to save uploaded file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file to disk: {str(e)[:200]}")
 
     # Create feed record
-    db.execute(
-        "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, confidence_level, created_at, event_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (feed_id, feed_name, file_path, "processing", analysis_mode, confidence_level, now, 0),
-    )
-    db.commit()
+    try:
+        db.execute(
+            "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, confidence_level, created_at, event_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (feed_id, feed_name, file_path, "processing", analysis_mode, confidence_level, now, 0),
+        )
+        db.commit()
+    except Exception as e:
+        logger.error(f"Database error creating feed record: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: Failed to create feed record. {str(e)[:200]}")
 
     logger.info(f"Feed {feed_id} created: {feed_name} (mode={analysis_mode}, confidence={confidence_level}) -> {file_path}")
 
@@ -594,17 +608,17 @@ def reanalyze_feed(
 ):
     """Re-analyze an existing feed with a different analysis mode."""
     if analysis_mode not in VALID_MODES:
-        raise HTTPException(status_code=400, detail=f"Invalid analysis mode. Must be one of: {VALID_MODES}")
+        raise HTTPException(status_code=400, detail=f"Invalid analysis mode '{analysis_mode}'. Must be one of: {sorted(VALID_MODES)}")
 
     if confidence_level not in VALID_CONFIDENCE_LEVELS:
-        raise HTTPException(status_code=400, detail=f"Invalid confidence level. Must be one of: {VALID_CONFIDENCE_LEVELS}")
+        raise HTTPException(status_code=400, detail=f"Invalid confidence level '{confidence_level}'. Must be one of: {sorted(VALID_CONFIDENCE_LEVELS)}")
 
     row = db.execute("SELECT id, feed_name, file_path, status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Feed not found")
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found.")
 
     if row["status"] == "processing":
-        raise HTTPException(status_code=409, detail="Feed is already being analyzed")
+        raise HTTPException(status_code=409, detail=f"Feed '{row['feed_name']}' is already being analyzed. Wait for the current analysis to complete.")
 
     # Reset feed to processing state
     db.execute(
@@ -637,5 +651,5 @@ def get_feed(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
         (feed_id,),
     ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Feed not found")
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found. It may have been deleted.")
     return _row_to_feed(row)

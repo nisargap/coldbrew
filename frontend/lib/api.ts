@@ -66,13 +66,19 @@ export async function reanalyzeFeed(feedId: string, analysisMode: string = "agen
 
 export async function getFeeds() {
   const res = await fetch(`${API_URL}/api/feeds`);
-  if (!res.ok) throw new Error("Failed to fetch feeds");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch feeds (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch feeds (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
 export async function getFeed(feedId: string) {
   const res = await fetch(`${API_URL}/api/feeds/${feedId}`);
-  if (!res.ok) throw new Error("Feed not found");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Feed not found (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Feed not found (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
@@ -84,13 +90,19 @@ export async function getEvents(params?: { category?: string; severity?: string;
   if (params?.min_confidence !== undefined) filtered.min_confidence = String(params.min_confidence);
   const query = new URLSearchParams(filtered).toString();
   const res = await fetch(`${API_URL}/api/events${query ? `?${query}` : ""}`);
-  if (!res.ok) throw new Error("Failed to fetch events");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch events (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch events (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
 export async function getEvent(id: string) {
   const res = await fetch(`${API_URL}/api/events/${id}`);
-  if (!res.ok) throw new Error("Event not found");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Event not found (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Event not found (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
@@ -100,7 +112,10 @@ export async function updateEventStatus(id: string, status: "acknowledged" | "di
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
-  if (!res.ok) throw new Error("Failed to update event");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to update event (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to update event (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
@@ -119,13 +134,19 @@ export async function sendNotification(eventIds: string[], personaIds: string[],
 
 export async function getNotifications() {
   const res = await fetch(`${API_URL}/api/notifications`);
-  if (!res.ok) throw new Error("Failed to fetch notifications");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch notifications (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch notifications (HTTP ${res.status})`);
+  }
   return res.json();
 }
 
 export async function getPersonas() {
   const res = await fetch(`${API_URL}/api/personas`);
-  if (!res.ok) throw new Error("Failed to fetch personas");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch personas (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch personas (HTTP ${res.status})`);
+  }
   return res.json();
 }
 

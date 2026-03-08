@@ -54,16 +54,20 @@ export default function FeedDetailPage() {
   const [monitoringStatus, setMonitoringStatus] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
+      setLoadError(null);
       const [feedData, eventsData] = await Promise.all([
         getFeed(feedId),
         getEvents({ feed_id: feedId }),
       ]);
       setFeed(feedData);
       setEvents(eventsData);
-    } catch {
-      // Error handling
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load feed data.";
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -122,8 +126,9 @@ export default function FeedDetailPage() {
       await updateEventStatus(id, status);
       showToast(status === "acknowledged" ? "Event acknowledged." : "Event dismissed.");
       fetchData();
-    } catch {
-      showToast("Something went wrong. Try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update event status.";
+      showToast(`Error: ${msg}`);
     }
   };
 
@@ -152,8 +157,9 @@ export default function FeedDetailPage() {
       await stopLivestream(feedId);
       showToast("Livestream monitoring stopped.");
       fetchData();
-    } catch {
-      showToast("Failed to stop monitoring.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to stop monitoring.";
+      showToast(`Error: ${msg}`);
     } finally {
       setStopping(false);
     }
@@ -196,7 +202,23 @@ export default function FeedDetailPage() {
   if (!feed) {
     return (
       <div className="p-6">
-        <p className="text-sm text-zinc-400">Feed not found.</p>
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 mb-4 transition-colors"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <AlertCircle size={28} className="text-red-400 mb-3" />
+          <p className="text-sm text-red-400 font-medium mb-1">Feed not found</p>
+          {loadError && <p className="text-xs text-zinc-500 max-w-md">{loadError}</p>}
+          <button
+            onClick={() => { setLoading(true); fetchData(); }}
+            className="mt-3 px-3 py-1.5 text-[13px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -932,8 +954,8 @@ function NotifyModal({
         message
       );
       onSent();
-    } catch {
-      // Error
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to send notification. Check backend logs.");
     } finally {
       setSending(false);
     }

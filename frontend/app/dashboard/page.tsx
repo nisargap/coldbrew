@@ -20,16 +20,19 @@ export default function DashboardPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
     try {
+      setError(null);
       const params: { category?: string; severity?: string } = {};
       if (categoryFilter !== "All") params.category = categoryFilter;
       if (severityFilter !== "All") params.severity = severityFilter;
       const data = await getEvents(params);
       setEvents(data);
-    } catch {
-      // Silently fail
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load events. Is the backend running?";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -59,8 +62,9 @@ export default function DashboardPage() {
       await updateEventStatus(id, status);
       showToast(status === "acknowledged" ? "Event acknowledged." : "Event dismissed.");
       fetchEvents();
-    } catch {
-      showToast("Something went wrong. Try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update event status.";
+      showToast(`Error: ${msg}`);
     }
   };
 
@@ -128,8 +132,23 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Error state */}
+      {!loading && error && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <AlertTriangle size={28} className="text-red-400 mb-3" />
+          <p className="text-sm text-red-400 font-medium mb-1">Failed to load events</p>
+          <p className="text-xs text-zinc-500 max-w-md">{error}</p>
+          <button
+            onClick={() => { setLoading(true); fetchEvents(); }}
+            className="mt-3 px-3 py-1.5 text-[13px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Empty state */}
-      {!loading && events.length === 0 && (
+      {!loading && !error && events.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertTriangle size={32} className="text-zinc-600 mb-3" />
           <p className="text-sm text-zinc-400">No events detected yet.</p>
@@ -401,8 +420,8 @@ function NotifyModal({
         message
       );
       onSent();
-    } catch {
-      // Error
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to send notification. Check backend logs.");
     } finally {
       setSending(false);
     }

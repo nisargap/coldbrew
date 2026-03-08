@@ -10,12 +10,21 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchNotifications = () => {
+    setLoading(true);
+    setError(null);
     getNotifications()
       .then(setNotifications)
-      .catch(() => {})
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load notifications. Is the backend running?");
+      })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchNotifications();
   }, []);
 
   const formatTime = (iso: string) => {
@@ -50,8 +59,23 @@ export default function NotificationsPage() {
         </div>
       )}
 
+      {/* Error */}
+      {!loading && error && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <AlertTriangle size={28} className="text-red-400 mb-3" />
+          <p className="text-sm text-red-400 font-medium mb-1">Failed to load notifications</p>
+          <p className="text-xs text-zinc-500 max-w-md">{error}</p>
+          <button
+            onClick={fetchNotifications}
+            className="mt-3 px-3 py-1.5 text-[13px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Empty */}
-      {!loading && notifications.length === 0 && (
+      {!loading && !error && notifications.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Bell size={32} className="text-zinc-600 mb-3" />
           <p className="text-sm text-zinc-400">No notifications have been sent.</p>

@@ -43,8 +43,9 @@ export default function UploadPage() {
     try {
       const data = await getFeeds();
       setFeeds(data);
-    } catch {
-      // Silently fail
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load feeds. Is the backend running on port 8000?";
+      setError(msg);
     }
   }, []);
 
@@ -132,8 +133,8 @@ export default function UploadPage() {
     try {
       await stopLivestream(feedId);
       fetchFeeds();
-    } catch {
-      // silently fail
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stop livestream.");
     } finally {
       setStoppingId(null);
     }
@@ -144,8 +145,8 @@ export default function UploadPage() {
     try {
       await stopAllLivestreams();
       fetchFeeds();
-    } catch {
-      // silently fail
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stop all livestreams.");
     } finally {
       setStoppingAll(false);
     }

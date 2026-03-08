@@ -343,6 +343,16 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
                 "analysis_mode": analysis_mode,
             })
 
+            # Step 6: Agentic enrichment + voice alerts (non-blocking)
+            if events and os.environ.get("ANTHROPIC_API_KEY"):
+                try:
+                    from services.agentic import enrich_events
+                    enrich_events(feed_id, feed_name, events, analysis_mode)
+                except Exception as e:
+                    logger.warning(f"[Agentic] Enrichment failed (non-fatal): {e}")
+            elif events:
+                logger.info(f"[Agentic] ANTHROPIC_API_KEY not set — skipping enrichment for feed {feed_id}")
+
     except Exception as e:
         logger.error(f"[Analysis] Failed for feed {feed_id}: {e}", exc_info=True)
         error_msg = str(e)[:500]

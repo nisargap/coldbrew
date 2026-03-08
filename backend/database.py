@@ -29,6 +29,7 @@ def create_tables():
             confidence_level  TEXT NOT NULL DEFAULT 'low',
             created_at        TEXT NOT NULL,
             event_count       INTEGER DEFAULT 0,
+            agentic_status    TEXT DEFAULT NULL,
             stream_url        TEXT,
             nomadic_stream_id TEXT,
             session_id        TEXT
@@ -68,6 +69,24 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS telegram_chats (
             chat_id       INTEGER PRIMARY KEY,
             subscribed_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS event_enrichments (
+            id                  TEXT PRIMARY KEY,
+            event_id            TEXT NOT NULL REFERENCES events(id),
+            feed_id             TEXT NOT NULL REFERENCES feeds(id),
+            root_cause          TEXT NOT NULL,
+            recommended_actions TEXT NOT NULL,
+            urgency_reasoning   TEXT NOT NULL,
+            suggested_personas  TEXT NOT NULL,
+            risk_score          INTEGER NOT NULL,
+            correlation_notes   TEXT,
+            voice_alert_script  TEXT,
+            voice_alert_url     TEXT,
+            voice_alert_status  TEXT DEFAULT NULL,
+            model_used          TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+            created_at          TEXT NOT NULL,
+            UNIQUE(event_id)
         );
         """
     )

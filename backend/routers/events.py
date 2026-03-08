@@ -1,11 +1,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 import sqlite3
 
 from database import get_db
-from models import EventResponse, EventStatusUpdate
+from models import EventResponse, EventStatusUpdate, EnrichmentResponse
+from services.agentic import get_enrichment_for_event, get_enrichments_for_feed
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -84,3 +85,12 @@ def update_event_status(
     db.commit()
 
     return {"id": event_id, "status": body.status}
+
+
+@router.get("/{event_id}/enrichment", response_model=EnrichmentResponse)
+def get_event_enrichment(event_id: str):
+    """Get agentic enrichment for a specific event."""
+    enrichment = get_enrichment_for_event(event_id)
+    if not enrichment:
+        raise HTTPException(status_code=404, detail=f"No enrichment found for event '{event_id}'. It may not have been enriched yet.")
+    return enrichment

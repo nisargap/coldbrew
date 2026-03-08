@@ -91,14 +91,12 @@ export default function UploadPage() {
     setUploading(true);
     setError(null);
     try {
-      await uploadFeed(file, feedName.trim(), analysisMode, confidenceLevel);
-      setFile(null);
-      setFeedName("");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      fetchFeeds();
+      const result = await uploadFeed(file, feedName.trim(), analysisMode, confidenceLevel);
+      // Navigate to feed detail page — it shows live analysis progress via SSE
+      // and auto-opens the conversational AI agent when analysis completes
+      router.push(`/feeds/${result.feed_id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
       setUploading(false);
     }
   };

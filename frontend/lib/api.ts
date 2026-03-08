@@ -150,6 +150,71 @@ export async function getPersonas() {
   return res.json();
 }
 
+export async function getEventEnrichment(eventId: string) {
+  const res = await fetch(`${API_URL}/api/events/${eventId}/enrichment`);
+  if (res.status === 404) return null; // Not enriched yet
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch enrichment (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch enrichment (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getFeedEnrichments(feedId: string) {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/enrichments`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to fetch enrichments (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to fetch enrichments (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function triggerEnrichment(feedId: string) {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/enrich`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to trigger enrichment" }));
+    throw new Error(err.detail || "Failed to trigger enrichment");
+  }
+  return res.json();
+}
+
+export async function startConversation(feedId: string): Promise<{
+  agent_id: string;
+  signed_url: string;
+  feed_name: string;
+  event_count: number;
+  critical_count: number;
+}> {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/conversation`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to start conversation" }));
+    throw new Error(err.detail || "Failed to start conversation");
+  }
+  return res.json();
+}
+
+export async function endConversation(feedId: string, agentId: string) {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/conversation/${agentId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to end conversation" }));
+    throw new Error(err.detail || "Failed to end conversation");
+  }
+  return res.json();
+}
+
+export async function getDependencyStatus() {
+  const res = await fetch(`${API_URL}/api/status`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to check status (HTTP ${res.status})` }));
+    throw new Error(err.detail || `Failed to check status (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
 /**
  * Subscribe to real-time feed status updates via SSE.
  * Returns an unsubscribe function.
@@ -175,9 +240,9 @@ export function subscribeFeedUpdates(onUpdate: (data: FeedSSEEvent) => void): ()
 }
 
 export interface FeedSSEEvent {
-  type: "feed_update" | "livestream_cycle";
+  type: "feed_update" | "livestream_cycle" | "agentic_complete" | "voice_alert_ready";
   feed_id: string;
-  status?: "completed" | "error" | "monitoring" | "capturing" | "analyzing" | "done";
+  status?: "completed" | "error" | "monitoring" | "capturing" | "analyzing" | "enriching" | "done";
   event_count?: number;
   error_message?: string;
   error?: string;
@@ -187,4 +252,12 @@ export interface FeedSSEEvent {
   viewer_url?: string;
   stream_id?: string;
   session_id?: string;
+  // Agentic enrichment fields
+  enriched_count?: number;
+  avg_risk_score?: number;
+  agentic_status?: string;
+  // Voice alert fields
+  event_id?: string;
+  voice_alert_url?: string;
+  risk_score?: number;
 }

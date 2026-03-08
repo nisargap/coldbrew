@@ -18,6 +18,8 @@ from database import get_db, DB_PATH
 from models import FeedUploadResponse, FeedResponse
 from services.analysis import analyze_video, parse_nomadic_events, classify_category, classify_severity
 from services.event_bus import subscribe, unsubscribe, publish as publish_sse
+from services.agentic import get_enrichments_for_feed, enrich_events as run_enrichment
+from services.conversation import create_conversation_agent, delete_conversation_agent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/feeds", tags=["feeds"])
@@ -62,6 +64,7 @@ def _row_to_feed(row: sqlite3.Row) -> FeedResponse:
         error_message=row["error_message"] if "error_message" in row.keys() else None,
         analysis_mode=row["analysis_mode"] if "analysis_mode" in row.keys() else "standard",
         confidence_level=row["confidence_level"] if "confidence_level" in row.keys() else "low",
+        agentic_status=row["agentic_status"] if "agentic_status" in row.keys() else None,
         video_url=_video_url_from_path(file_path),
         stream_url=row["stream_url"] if "stream_url" in row.keys() else None,
         nomadic_stream_id=nomadic_stream_id,
@@ -563,7 +566,7 @@ def _sdk_event_to_local(sdk_event: dict, feed_id: str, feed_name: str) -> dict:
 @router.get("", response_model=list[FeedResponse])
 def list_feeds(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds ORDER BY created_at DESC"
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds ORDER BY created_at DESC"
     ).fetchall()
     return [_row_to_feed(row) for row in rows]
 
@@ -596,6 +599,92 @@ async def stream_feed_updates():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/{feed_id}/enrichments")
+def get_feed_enrichments(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
+    """Get all agentic enrichments for a feed."""
+    row = db.execute("SELECT id FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found.")
+    return get_enrichments_for_feed(feed_id)
+
+
+@router.post("/{feed_id}/enrich")
+def trigger_enrichment(
+    feed_id: str,
+    background_tasks: BackgroundTasks,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Manually trigger agentic enrichment for a feed."""
+    row = db.execute(
+        "SELECT id, feed_name, analysis_mode, agentic_status FROM feeds WHERE id = ?",
+        (feed_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found.")
+
+    if row["agentic_status"] == "processing":
+        raise HTTPException(status_code=409, detail="Enrichment is already in progress for this feed.")
+
+    # Fetch events for this feed
+    event_rows = db.execute(
+        "SELECT id, title, description, category, severity, confidence, timestamp FROM events WHERE feed_id = ? ORDER BY created_at",
+        (feed_id,),
+    ).fetchall()
+
+    if not event_rows:
+        raise HTTPException(status_code=400, detail="No events found for this feed. Run analysis first.")
+
+    events = [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "description": r["description"],
+            "category": r["category"],
+            "severity": r["severity"],
+            "confidence": r["confidence"],
+            "video_time": "00:00-00:00",
+        }
+        for r in event_rows
+    ]
+
+    feed_name = row["feed_name"]
+    analysis_mode = row["analysis_mode"] if "analysis_mode" in row.keys() else "standard"
+
+    background_tasks.add_task(run_enrichment, feed_id, feed_name, events, analysis_mode)
+
+    return {"status": "started", "feed_id": feed_id, "event_count": len(events)}
+
+
+@router.post("/{feed_id}/conversation")
+def start_conversation(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
+    """Create an ElevenLabs Conversational AI agent for this feed and return a signed WebSocket URL.
+
+    The agent is pre-loaded with the feed's analysis context (events + enrichments)
+    and will narrate the findings, then offer interactive Q&A.
+    """
+    row = db.execute("SELECT id, agentic_status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_id}' not found.")
+
+    try:
+        result = create_conversation_agent(feed_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"[ConvAI] Conversation creation failed for feed {feed_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create conversation agent: {str(e)[:200]}")
+
+
+@router.delete("/{feed_id}/conversation/{agent_id}")
+def end_conversation(feed_id: str, agent_id: str):
+    """Clean up an ElevenLabs Conversational AI agent after the conversation ends."""
+    success = delete_conversation_agent(agent_id)
+    return {"status": "deleted" if success else "failed", "agent_id": agent_id}
 
 
 @router.post("/{feed_id}/reanalyze", response_model=FeedUploadResponse)
@@ -647,7 +736,7 @@ def reanalyze_feed(
 @router.get("/{feed_id}", response_model=FeedResponse)
 def get_feed(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds WHERE id = ?",
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds WHERE id = ?",
         (feed_id,),
     ).fetchone()
     if not row:

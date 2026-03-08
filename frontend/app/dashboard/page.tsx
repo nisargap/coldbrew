@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Filter, Bell, Check, X, ChevronDown, ExternalLink } from "lucide-react";
-import { getEvents, updateEventStatus, sendNotification, getPersonas } from "@/lib/api";
-import type { Event, Persona } from "@/lib/types";
-import { SEVERITY_COLORS } from "@/lib/types";
+import { AlertTriangle, Filter, Bell, Check, X, ChevronDown, ExternalLink, Zap, Bot } from "lucide-react";
+import { getEvents, updateEventStatus, sendNotification, getPersonas, getEventEnrichment } from "@/lib/api";
+import type { Event, Persona, EventEnrichment } from "@/lib/types";
+import { SEVERITY_COLORS, getRiskColor, getRiskBg } from "@/lib/types";
 
 const CATEGORIES = ["All", "Safety", "Equipment", "Shipment", "Operational", "Environmental"];
 const SEVERITIES = ["All", "Critical", "High", "Medium", "Low"];
@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [severityFilter, setSeverityFilter] = useState("All");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [enrichmentCache, setEnrichmentCache] = useState<Record<string, EventEnrichment | null>>({});
   const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +83,24 @@ export default function DashboardPage() {
     if (hrs < 24) return `${hrs}h ago`;
     return `${Math.floor(hrs / 24)}d ago`;
   };
+
+  // Fetch enrichment when event is expanded
+  const handleExpand = useCallback(async (eventId: string) => {
+    if (expandedId === eventId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(eventId);
+    // Fetch enrichment if not cached
+    if (enrichmentCache[eventId] === undefined) {
+      try {
+        const data = await getEventEnrichment(eventId);
+        setEnrichmentCache((prev) => ({ ...prev, [eventId]: data }));
+      } catch {
+        setEnrichmentCache((prev) => ({ ...prev, [eventId]: null }));
+      }
+    }
+  }, [expandedId, enrichmentCache]);
 
   const criticalCount = events.filter(
     (e) => (e.severity === "Critical" || e.severity === "High") && e.status === "new"
@@ -173,7 +192,7 @@ export default function DashboardPage() {
                   className={`flex items-center gap-3 px-3 py-3 border-b border-[#27272A] hover:bg-[#27272A]/50 transition-colors duration-100 cursor-pointer ${
                     isSelected ? "border-l-2 border-l-blue-500" : "border-l-2 border-l-transparent"
                   }`}
-                  onClick={() => setExpandedId(isExpanded ? null : event.id)}
+                  onClick={() => handleExpand(event.id)}
                 >
                   {/* Checkbox */}
                   <input
@@ -277,8 +296,14 @@ export default function DashboardPage() {
                       </button>
                       <span>ID: {event.id.slice(0, 8)}</span>
                     </div>
+
+                    {/* AI Enrichment inline */}
+                    {enrichmentCache[event.id] && (
+                      <DashboardEnrichmentPanel enrichment={enrichmentCache[event.id]!} />
+                    )}
+
                     {event.status === "new" && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-3">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleStatusUpdate(event.id, "acknowledged"); }}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
@@ -508,6 +533,81 @@ function NotifyModal({
             {sending ? "Sending..." : "Send Notification"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const VOICE_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function DashboardEnrichmentPanel({ enrichment }: { enrichment: EventEnrichment }) {
+  return (
+    <div className={`rounded-lg border ${getRiskBg(enrichment.risk_score)} mb-3 p-3`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Zap size={12} className="text-emerald-400" />
+        <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">AI Analysis</span>
+        <span className={`text-[12px] font-bold ${getRiskColor(enrichment.risk_score)}`}>
+          Risk: {enrichment.risk_score}/10
+        </span>
+      </div>
+
+      {/* Root Cause */}
+      <p className="text-[12px] text-zinc-300 mb-2">{enrichment.root_cause}</p>
+
+      {/* Actions (collapsed) */}
+      <div className="mb-2">
+        <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Actions</p>
+        <ul className="space-y-0.5">
+          {enrichment.recommended_actions.slice(0, 3).map((action, i) => (
+            <li key={i} className="flex items-start gap-1.5 text-[11px] text-zinc-400">
+              <span className="text-emerald-400 mt-0.5 flex-shrink-0">→</span>
+              <span>{action}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Suggested Personas */}
+      {enrichment.suggested_personas.length > 0 && (
+        <div className="mb-2">
+          <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Notify</p>
+          <div className="flex flex-wrap gap-1.5">
+            {enrichment.suggested_personas.map((p, i) => (
+              <span
+                key={i}
+                className="text-[10px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded"
+                title={p.reason}
+              >
+                {p.role}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Voice Alert */}
+      {enrichment.voice_alert_script && (
+        <div className="rounded-md bg-[#27272A] p-2 mt-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[12px]">🔊</span>
+            <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Voice Alert</span>
+          </div>
+          <p className="text-[11px] text-zinc-300 italic">&ldquo;{enrichment.voice_alert_script}&rdquo;</p>
+          {enrichment.voice_alert_url && enrichment.voice_alert_status === "completed" && (
+            <audio
+              controls
+              preload="none"
+              className="mt-1.5 w-full h-7"
+              src={`${VOICE_BASE}${enrichment.voice_alert_url}`}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Model info */}
+      <div className="flex items-center gap-2 text-[9px] text-zinc-600 mt-2">
+        <Bot size={9} />
+        <span>{enrichment.model_used}</span>
       </div>
     </div>
   );

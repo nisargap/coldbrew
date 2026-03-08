@@ -18,6 +18,7 @@ class FeedResponse(BaseModel):
     error_message: Optional[str] = None
     analysis_mode: str = "standard"
     confidence_level: str = "low"
+    agentic_status: Optional[str] = None
     video_url: Optional[str] = None
     stream_url: Optional[str] = None
     nomadic_stream_id: Optional[str] = None
@@ -77,4 +78,26 @@ class NotificationResponse(BaseModel):
     sent_to: list[PersonaResponse]
     event_ids: list[str]
     events: list[EventSummary] = []
+    created_at: str
+
+
+class SuggestedPersona(BaseModel):
+    role: str
+    reason: str
+
+
+class EnrichmentResponse(BaseModel):
+    id: str
+    event_id: str
+    feed_id: str
+    root_cause: str
+    recommended_actions: list[str]
+    urgency_reasoning: str
+    suggested_personas: list[SuggestedPersona]
+    risk_score: int
+    correlation_notes: Optional[str] = None
+    voice_alert_script: Optional[str] = None
+    voice_alert_url: Optional[str] = None
+    voice_alert_status: Optional[str] = None
+    model_used: str
     created_at: str

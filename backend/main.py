@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import create_tables
-from routers import feeds, events, notifications, personas
+from routers import feeds, events, notifications, personas, status
 from services.telegram import start_bot, stop_bot
 
 # Logging
@@ -44,6 +44,7 @@ app.include_router(feeds.router)
 app.include_router(events.router)
 app.include_router(notifications.router)
 app.include_router(personas.router)
+app.include_router(status.router)
 
 # Serve uploaded files (thumbnails etc.)
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")

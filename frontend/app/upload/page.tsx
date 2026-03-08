@@ -13,13 +13,18 @@ import {
   Zap,
   ShieldCheck,
   ShieldAlert,
+  Radio,
+  Link as LinkIcon,
+  StopCircle,
+  Square,
 } from "lucide-react";
-import { uploadFeed, getFeeds, subscribeFeedUpdates } from "@/lib/api";
+import { uploadFeed, startLivestream, getFeeds, subscribeFeedUpdates, stopLivestream, stopAllLivestreams } from "@/lib/api";
 import type { Feed, AnalysisMode, ConfidenceLevel } from "@/lib/types";
 import { ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
 
 export default function UploadPage() {
   const router = useRouter();
+  const [inputMode, setInputMode] = useState<"file" | "livestream">("file");
   const [file, setFile] = useState<File | null>(null);
   const [feedName, setFeedName] = useState("");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("standard");
@@ -28,6 +33,10 @@ export default function UploadPage() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamUrl, setStreamUrl] = useState("");
+  const [streamQuery, setStreamQuery] = useState("");
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [stoppingAll, setStoppingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchFeeds = useCallback(async () => {
@@ -93,6 +102,20 @@ export default function UploadPage() {
     }
   };
 
+  const handleLivestream = async () => {
+    if (!streamUrl.trim() || !feedName.trim()) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const result = await startLivestream(streamUrl.trim(), feedName.trim(), analysisMode, streamQuery.trim());
+      // Navigate to feed detail page to see live monitoring
+      router.push(`/feeds/${result.feed_id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Livestream analysis failed");
+      setUploading(false);
+    }
+  };
+
   const formatTime = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
@@ -102,50 +125,143 @@ export default function UploadPage() {
     return `${hrs}h ago`;
   };
 
+  const liveFeeds = feeds.filter((f) => f.status === "monitoring");
+
+  const handleStopFeed = async (feedId: string) => {
+    setStoppingId(feedId);
+    try {
+      await stopLivestream(feedId);
+      fetchFeeds();
+    } catch {
+      // silently fail
+    } finally {
+      setStoppingId(null);
+    }
+  };
+
+  const handleStopAll = async () => {
+    setStoppingAll(true);
+    try {
+      await stopAllLivestreams();
+      fetchFeeds();
+    } catch {
+      // silently fail
+    } finally {
+      setStoppingAll(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <h2 className="text-xl font-semibold text-zinc-50 mb-6">Upload</h2>
 
-      {/* Drop zone */}
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors duration-100 ${
-          dragOver
-            ? "border-blue-500 bg-blue-500/5"
-            : "border-zinc-700 hover:border-zinc-600"
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="video/mp4,video/quicktime"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        {file ? (
-          <div className="flex flex-col items-center gap-2">
-            <FileVideo size={32} className="text-blue-400" />
-            <p className="text-sm text-zinc-200 font-medium">{file.name}</p>
-            <p className="text-xs text-zinc-500">
-              {(file.size / (1024 * 1024)).toFixed(1)} MB
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <UploadIcon size={32} className="text-zinc-500" />
-            <p className="text-sm text-zinc-300">
-              Drop a video file here, or click to browse
-            </p>
-            <p className="text-xs text-zinc-600">MP4 or MOV, up to 500 MB</p>
-          </div>
-        )}
+      {/* Input mode tabs */}
+      <div className="flex gap-1 mb-4 bg-[#1a1a1d] rounded-lg p-1">
+        <button
+          onClick={() => setInputMode("file")}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[13px] font-medium transition-all ${
+            inputMode === "file"
+              ? "bg-[#27272A] text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300"
+          }`}
+        >
+          <UploadIcon size={14} />
+          File Upload
+        </button>
+        <button
+          onClick={() => setInputMode("livestream")}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[13px] font-medium transition-all ${
+            inputMode === "livestream"
+              ? "bg-[#27272A] text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300"
+          }`}
+        >
+          <Radio size={14} />
+          Live Stream / URL
+        </button>
       </div>
+
+      {inputMode === "file" ? (
+        /* Drop zone */
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors duration-100 ${
+            dragOver
+              ? "border-blue-500 bg-blue-500/5"
+              : "border-zinc-700 hover:border-zinc-600"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/mp4,video/quicktime"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          {file ? (
+            <div className="flex flex-col items-center gap-2">
+              <FileVideo size={32} className="text-blue-400" />
+              <p className="text-sm text-zinc-200 font-medium">{file.name}</p>
+              <p className="text-xs text-zinc-500">
+                {(file.size / (1024 * 1024)).toFixed(1)} MB
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <UploadIcon size={32} className="text-zinc-500" />
+              <p className="text-sm text-zinc-300">
+                Drop a video file here, or click to browse
+              </p>
+              <p className="text-xs text-zinc-600">MP4 or MOV, up to 500 MB</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Livestream URL input */
+        <div className="border border-[#27272A] rounded-lg p-6 space-y-4">
+          <div className="flex flex-col items-center gap-2 mb-2">
+            <Radio size={32} className="text-red-400" />
+            <p className="text-sm text-zinc-300">Paste a live stream URL (HLS, YouTube, RTMP, etc.)</p>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5 block">
+              Stream URL
+            </label>
+            <input
+              type="url"
+              placeholder="https://stream.example.com/live.m3u8"
+              value={streamUrl}
+              onChange={(e) => setStreamUrl(e.target.value)}
+              className="w-full bg-[#27272A] border border-[#27272A] rounded-md px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5 block">
+              Detection Query <span className="text-zinc-600">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., detect forklift near-misses or PPE violations"
+              value={streamQuery}
+              onChange={(e) => setStreamQuery(e.target.value)}
+              className="w-full bg-[#27272A] border border-[#27272A] rounded-md px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+            <p className="text-[11px] text-zinc-600 mt-1">
+              Describe what events to look for. Leave blank for general warehouse monitoring.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            Powered by NomadicML — real-time stream analysis with continuous event detection
+          </div>
+        </div>
+      )}
 
       {/* Analysis mode selector */}
       <div className="mt-4">
@@ -243,28 +359,39 @@ export default function UploadPage() {
         </div>
       </div>
 
-      {/* Feed name + upload button */}
+      {/* Feed name + action button */}
       <div className="mt-4 flex gap-3">
         <input
           type="text"
-          placeholder="Feed name (e.g., Dock Cam 2)"
+          placeholder={inputMode === "livestream" ? "Feed name (e.g., Warehouse Stream)" : "Feed name (e.g., Dock Cam 2)"}
           value={feedName}
           onChange={(e) => setFeedName(e.target.value)}
           className="flex-1 bg-[#27272A] border border-[#27272A] rounded-md px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
         />
         <button
-          onClick={handleUpload}
-          disabled={!file || !feedName.trim() || uploading}
+          onClick={inputMode === "livestream" ? handleLivestream : handleUpload}
+          disabled={
+            inputMode === "livestream"
+              ? !streamUrl.trim() || !feedName.trim() || uploading
+              : !file || !feedName.trim() || uploading
+          }
           className={`px-4 py-2 text-white text-[13px] font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${
-            analysisMode === "agent"
-              ? "bg-purple-600 hover:bg-purple-700"
-              : "bg-blue-500 hover:bg-blue-600"
+            inputMode === "livestream"
+              ? "bg-red-500 hover:bg-red-600"
+              : analysisMode === "agent"
+                ? "bg-purple-600 hover:bg-purple-700"
+                : "bg-blue-500 hover:bg-blue-600"
           }`}
         >
           {uploading ? (
             <>
               <Loader2 size={14} className="animate-spin" />
-              Uploading...
+              {inputMode === "livestream" ? "Starting..." : "Uploading..."}
+            </>
+          ) : inputMode === "livestream" ? (
+            <>
+              <Radio size={14} />
+              Start Monitoring
             </>
           ) : analysisMode === "agent" ? (
             <>
@@ -287,12 +414,30 @@ export default function UploadPage() {
       {/* Recent uploads */}
       {feeds.length > 0 && (
         <div className="mt-8">
-          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
-            Recent Uploads
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              Recent Uploads
+            </h3>
+            {liveFeeds.length > 1 && (
+              <button
+                onClick={handleStopAll}
+                disabled={stoppingAll}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors disabled:opacity-50"
+              >
+                {stoppingAll ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Square size={11} />
+                )}
+                Stop All Live ({liveFeeds.length})
+              </button>
+            )}
+          </div>
           <div className="space-y-1">
             {feeds.map((feed) => {
-              const isClickable = feed.status === "completed";
+              const isClickable = feed.status === "completed" || feed.status === "monitoring";
+              const isLive = feed.status === "monitoring";
+              const isStopping = stoppingId === feed.feed_id || stoppingAll;
               return (
                 <div
                   key={feed.feed_id}
@@ -307,13 +452,28 @@ export default function UploadPage() {
                     <ModeBadge mode={feed.analysis_mode} />
                     <ConfidenceBadge level={feed.confidence_level} />
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     {feed.status === "completed" && (
                       <span className="text-xs text-blue-400 hover:underline">
                         {feed.event_count} event{feed.event_count !== 1 ? "s" : ""}
                       </span>
                     )}
                     <StatusBadge status={feed.status} errorMessage={feed.error_message} />
+                    {isLive && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleStopFeed(feed.feed_id); }}
+                        disabled={isStopping}
+                        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors disabled:opacity-50"
+                        title="Stop this livestream"
+                      >
+                        {isStopping ? (
+                          <Loader2 size={10} className="animate-spin" />
+                        ) : (
+                          <StopCircle size={10} />
+                        )}
+                        Stop
+                      </button>
+                    )}
                     <span className="text-xs text-zinc-600 font-mono">
                       {formatTime(feed.created_at)}
                     </span>
@@ -387,6 +547,14 @@ function StatusBadge({ status, errorMessage }: { status: string; errorMessage?: 
       >
         <AlertCircle size={12} />
         Error{errorMessage ? `: ${errorMessage.slice(0, 60)}` : ""}
+      </span>
+    );
+  }
+  if (status === "monitoring") {
+    return (
+      <span className="flex items-center gap-1 text-[11px] font-medium text-red-400 animate-pulse">
+        <Radio size={12} />
+        Live
       </span>
     );
   }

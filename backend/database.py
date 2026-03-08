@@ -20,15 +20,18 @@ def create_tables():
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS feeds (
-            id               TEXT PRIMARY KEY,
-            feed_name        TEXT NOT NULL,
-            file_path        TEXT NOT NULL,
-            status           TEXT NOT NULL DEFAULT 'processing',
-            error_message    TEXT,
-            analysis_mode    TEXT NOT NULL DEFAULT 'standard',
-            confidence_level TEXT NOT NULL DEFAULT 'low',
-            created_at       TEXT NOT NULL,
-            event_count      INTEGER DEFAULT 0
+            id                TEXT PRIMARY KEY,
+            feed_name         TEXT NOT NULL,
+            file_path         TEXT NOT NULL,
+            status            TEXT NOT NULL DEFAULT 'processing',
+            error_message     TEXT,
+            analysis_mode     TEXT NOT NULL DEFAULT 'standard',
+            confidence_level  TEXT NOT NULL DEFAULT 'low',
+            created_at        TEXT NOT NULL,
+            event_count       INTEGER DEFAULT 0,
+            stream_url        TEXT,
+            nomadic_stream_id TEXT,
+            session_id        TEXT
         );
 
         CREATE TABLE IF NOT EXISTS events (
@@ -53,6 +56,31 @@ def create_tables():
             event_ids   TEXT NOT NULL,
             created_at  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS personas (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            role        TEXT NOT NULL,
+            category    TEXT,
+            created_at  TEXT NOT NULL
+        );
         """
     )
+
+    # Seed default personas if table is empty
+    count = conn.execute("SELECT COUNT(*) FROM personas").fetchone()[0]
+    if count == 0:
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        conn.executemany(
+            "INSERT INTO personas (id, name, role, category, created_at) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("alex-rivera", "Alex Rivera", "Warehouse Manager", None, now),
+                ("sam-okafor", "Sam Okafor", "Maintenance Technician", "Equipment", now),
+                ("jordan-lin", "Jordan Lin", "Dock Supervisor", "Shipment", now),
+                ("priya-desai", "Priya Desai", "Safety Officer", "Safety", now),
+            ],
+        )
+        conn.commit()
+
     conn.close()

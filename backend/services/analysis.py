@@ -309,22 +309,36 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
             )
 
         # Step 5: Update feed status
-        conn.execute(
-            "UPDATE feeds SET status = ?, event_count = ?, analysis_mode = ? WHERE id = ?",
-            ("completed", len(events), analysis_mode, feed_id),
-        )
-        conn.commit()
-        logger.info(f"[Analysis] Feed {feed_id} complete ({analysis_mode}). {len(events)} events stored.")
+        # Check if feed is in "monitoring" mode (livestream) — don't overwrite status
+        current_row = conn.execute("SELECT status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+        current_status = current_row[0] if current_row else None
 
-        # Publish real-time update via SSE
-        publish_sse({
-            "type": "feed_update",
-            "feed_id": feed_id,
-            "status": "completed",
-            "event_count": len(events),
-            "feed_name": feed_name,
-            "analysis_mode": analysis_mode,
-        })
+        if current_status == "monitoring":
+            # Livestream feed: only update event_count, keep "monitoring" status
+            total_events = conn.execute("SELECT COUNT(*) FROM events WHERE feed_id = ?", (feed_id,)).fetchone()[0]
+            conn.execute(
+                "UPDATE feeds SET event_count = ?, analysis_mode = ? WHERE id = ?",
+                (total_events, analysis_mode, feed_id),
+            )
+            conn.commit()
+            logger.info(f"[Analysis] Feed {feed_id} cycle complete ({analysis_mode}). {len(events)} new events, {total_events} total.")
+        else:
+            conn.execute(
+                "UPDATE feeds SET status = ?, event_count = ?, analysis_mode = ? WHERE id = ?",
+                ("completed", len(events), analysis_mode, feed_id),
+            )
+            conn.commit()
+            logger.info(f"[Analysis] Feed {feed_id} complete ({analysis_mode}). {len(events)} events stored.")
+
+            # Publish real-time update via SSE (only for non-monitoring feeds)
+            publish_sse({
+                "type": "feed_update",
+                "feed_id": feed_id,
+                "status": "completed",
+                "event_count": len(events),
+                "feed_name": feed_name,
+                "analysis_mode": analysis_mode,
+            })
 
     except Exception as e:
         logger.error(f"[Analysis] Failed for feed {feed_id}: {e}", exc_info=True)
@@ -332,18 +346,34 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
         try:
             if conn is None:
                 conn = sqlite3.connect(DB_PATH)
-            conn.execute("UPDATE feeds SET status = ?, error_message = ? WHERE id = ?", ("error", error_msg, feed_id))
-            conn.commit()
+            # Don't overwrite "monitoring" status — the livestream loop handles retries
+            current_row = conn.execute("SELECT status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+            if current_row and current_row[0] == "monitoring":
+                logger.info(f"[Analysis] Feed {feed_id} cycle failed but feed is monitoring — skipping status update")
+            else:
+                conn.execute("UPDATE feeds SET status = ?, error_message = ? WHERE id = ?", ("error", error_msg, feed_id))
+                conn.commit()
         except Exception as db_err:
             logger.error(f"[Analysis] Failed to update feed status to error: {db_err}")
 
-        publish_sse({
-            "type": "feed_update",
-            "feed_id": feed_id,
-            "status": "error",
-            "error_message": error_msg,
-            "feed_name": feed_name,
-        })
+        # Don't publish error SSE for monitoring feeds (cycle errors handled by monitor)
+        current_status_check = None
+        try:
+            tmp_conn = sqlite3.connect(DB_PATH)
+            r = tmp_conn.execute("SELECT status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+            current_status_check = r[0] if r else None
+            tmp_conn.close()
+        except Exception:
+            pass
+
+        if current_status_check != "monitoring":
+            publish_sse({
+                "type": "feed_update",
+                "feed_id": feed_id,
+                "status": "error",
+                "error_message": error_msg,
+                "feed_name": feed_name,
+            })
     finally:
         if conn:
             conn.close()

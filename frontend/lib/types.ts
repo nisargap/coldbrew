@@ -4,11 +4,15 @@ export type ConfidenceLevel = "low" | "high";
 export interface Feed {
   feed_id: string;
   feed_name: string;
-  status: "processing" | "completed" | "error";
+  status: "processing" | "completed" | "error" | "monitoring";
   error_message?: string | null;
   analysis_mode: AnalysisMode;
   confidence_level: ConfidenceLevel;
   video_url?: string | null;
+  stream_url?: string | null;
+  nomadic_stream_id?: string | null;
+  session_id?: string | null;
+  viewer_url?: string | null;
   created_at: string;
   event_count: number;
 }
@@ -48,6 +52,7 @@ export interface Persona {
   id: string;
   name: string;
   role: string;
+  category?: string | null;
 }
 
 export interface Notification {
@@ -58,13 +63,6 @@ export interface Notification {
   events: EventSummary[];
   created_at: string;
 }
-
-export const PERSONAS: Persona[] = [
-  { id: "alex-rivera", name: "Alex Rivera", role: "Warehouse Manager" },
-  { id: "sam-okafor", name: "Sam Okafor", role: "Maintenance Technician" },
-  { id: "jordan-lin", name: "Jordan Lin", role: "Dock Supervisor" },
-  { id: "priya-desai", name: "Priya Desai", role: "Safety Officer" },
-];
 
 export const SEVERITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   Critical: { bg: "bg-red-500/[0.12]", text: "text-red-400", border: "border-red-500/25" },

@@ -17,6 +17,7 @@
     "@types/node": "^25.3.5",
     "@types/react": "^19.2.14",
     "autoprefixer": "^10.4.27",
+    "hls.js": "^1.6.15",
     "lucide-react": "^0.577.0",
     "next": "^14.2.35",
     "postcss": "^8.5.8",

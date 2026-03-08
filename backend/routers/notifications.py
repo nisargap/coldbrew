@@ -8,7 +8,6 @@ import sqlite3
 
 from database import get_db
 from models import (
-    PERSONAS,
     NotificationSendRequest,
     NotificationSendResponse,
     NotificationResponse,
@@ -18,6 +17,14 @@ from models import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+
+def _get_persona(db: sqlite3.Connection, persona_id: str) -> dict | None:
+    """Look up a persona from the database."""
+    row = db.execute("SELECT id, name, role FROM personas WHERE id = ?", (persona_id,)).fetchone()
+    if row:
+        return {"id": row["id"], "name": row["name"], "role": row["role"]}
+    return None
 
 
 @router.post("/send", response_model=NotificationSendResponse, status_code=201)
@@ -32,10 +39,10 @@ def send_notification(
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    # Resolve personas
+    # Resolve personas from the database
     sent_to = []
     for pid in body.persona_ids:
-        persona = PERSONAS.get(pid)
+        persona = _get_persona(db, pid)
         if persona:
             sent_to.append(persona)
 

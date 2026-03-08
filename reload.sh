@@ -4,8 +4,24 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "🔄 Stopping existing processes..."
-fuser -k 8000/tcp 2>/dev/null || true
-fuser -k 3000/tcp 2>/dev/null || true
+# Kill main port listeners
+BACKEND_PIDS=$(lsof -ti:8000 2>/dev/null || true)
+FRONTEND_PIDS=$(lsof -ti:3000 2>/dev/null || true)
+
+# Kill main processes and their entire process groups (child threads/spawns)
+for pid in $BACKEND_PIDS; do
+  pgid=$(ps -o pgid= -p $pid 2>/dev/null | tr -d ' ')
+  if [ -n "$pgid" ]; then
+    kill -9 -$pgid 2>/dev/null || true
+  fi
+  kill -9 $pid 2>/dev/null || true
+done
+for pid in $FRONTEND_PIDS; do
+  kill -9 $pid 2>/dev/null || true
+done
+
+# Also kill any lingering python multiprocessing spawn children from old servers
+pkill -9 -f "multiprocessing.spawn" 2>/dev/null || true
 sleep 2
 
 echo "🚀 Starting backend (port 8000)..."

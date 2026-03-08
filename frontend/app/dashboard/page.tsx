@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Filter, Bell, Check, X, ChevronDown, ExternalLink } from "lucide-react";
-import { getEvents, updateEventStatus, sendNotification } from "@/lib/api";
+import { getEvents, updateEventStatus, sendNotification, getPersonas } from "@/lib/api";
 import type { Event, Persona } from "@/lib/types";
-import { PERSONAS, SEVERITY_COLORS } from "@/lib/types";
+import { SEVERITY_COLORS } from "@/lib/types";
 
 const CATEGORIES = ["All", "Safety", "Equipment", "Shipment", "Operational", "Environmental"];
 const SEVERITIES = ["All", "Critical", "High", "Medium", "Low"];
@@ -348,20 +348,31 @@ function NotifyModal({
   onClose: () => void;
   onSent: () => void;
 }) {
-  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(() => {
-    // Smart auto-select: match personas to event categories
-    const autoSelect = new Set<string>();
-    for (const e of selectedEvents) {
-      if (e.severity === "Critical" || e.severity === "High") {
-        autoSelect.add("alex-rivera"); // Warehouse Manager for all Critical/High
-      }
-      if (e.category === "Safety") autoSelect.add("priya-desai");
-      if (e.category === "Equipment") autoSelect.add("sam-okafor");
-      if (e.category === "Shipment") autoSelect.add("jordan-lin");
-    }
-    if (autoSelect.size === 0) autoSelect.add("alex-rivera");
-    return autoSelect;
-  });
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getPersonas()
+      .then((data: Persona[]) => {
+        setPersonas(data);
+        // Smart auto-select: match personas to event categories
+        const autoSelect = new Set<string>();
+        const categoryMap: Record<string, string> = {};
+        for (const p of data) {
+          if (p.category) categoryMap[p.category] = p.id;
+        }
+        for (const e of selectedEvents) {
+          if (e.severity === "Critical" || e.severity === "High") {
+            // Select first persona (manager) for critical/high
+            if (data.length > 0) autoSelect.add(data[0].id);
+          }
+          if (categoryMap[e.category]) autoSelect.add(categoryMap[e.category]);
+        }
+        if (autoSelect.size === 0 && data.length > 0) autoSelect.add(data[0].id);
+        setSelectedPersonas(autoSelect);
+      })
+      .catch(() => {});
+  }, []);
 
   const [message, setMessage] = useState(() => {
     const lines = selectedEvents.map(
@@ -429,7 +440,9 @@ function NotifyModal({
             Recipients
           </label>
           <div className="mt-2 space-y-1.5">
-            {PERSONAS.map((p: Persona) => (
+            {personas.length === 0 ? (
+              <p className="text-xs text-zinc-500">Loading recipients...</p>
+            ) : personas.map((p: Persona) => (
               <label
                 key={p.id}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-[#27272A]/50 cursor-pointer transition-colors"

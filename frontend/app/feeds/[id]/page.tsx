@@ -17,6 +17,8 @@ import {
   Bot,
   RefreshCw,
   Zap,
+  Radio,
+  StopCircle,
 } from "lucide-react";
 import {
   getFeed,
@@ -24,10 +26,13 @@ import {
   updateEventStatus,
   sendNotification,
   reanalyzeFeed,
+  stopLivestream,
   subscribeFeedUpdates,
+  getPersonas,
 } from "@/lib/api";
 import type { Event, Feed, Persona, AnalysisMode, ConfidenceLevel } from "@/lib/types";
-import { PERSONAS, SEVERITY_COLORS, ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
+import { SEVERITY_COLORS, ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
+import HlsPlayer from "@/components/hls-player";
 
 export default function FeedDetailPage() {
   const params = useParams();
@@ -45,6 +50,9 @@ export default function FeedDetailPage() {
   const [reanalyzeConfidence, setReanalyzeConfidence] = useState<ConfidenceLevel>("low");
   const [reanalyzing, setReanalyzing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [monitoringCycle, setMonitoringCycle] = useState(0);
+  const [monitoringStatus, setMonitoringStatus] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -67,7 +75,21 @@ export default function FeedDetailPage() {
     // SSE for real-time updates
     const unsub = subscribeFeedUpdates((event) => {
       if (event.feed_id === feedId) {
-        fetchData();
+        // Handle livestream cycle events
+        if (event.type === "livestream_cycle") {
+          setMonitoringCycle(event.cycle ?? 0);
+          setMonitoringStatus(event.status ?? null);
+          // Refresh data when a new event is detected
+          if (event.status === "done") {
+            fetchData();
+          }
+          // Refresh feed data when we get session info (viewer_url)
+          if (event.viewer_url || event.session_id) {
+            fetchData();
+          }
+        } else {
+          fetchData();
+        }
       }
     });
 
@@ -122,6 +144,26 @@ export default function FeedDetailPage() {
     } finally {
       setReanalyzing(false);
     }
+  };
+
+  const handleStopMonitoring = async () => {
+    setStopping(true);
+    try {
+      await stopLivestream(feedId);
+      showToast("Livestream monitoring stopped.");
+      fetchData();
+    } catch {
+      showToast("Failed to stop monitoring.");
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  const getYouTubeVideoId = (url: string): string | null => {
+    const m = url.match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/
+    );
+    return m ? m[1] : null;
   };
 
   const formatTime = (iso: string) => {
@@ -182,15 +224,259 @@ export default function FeedDetailPage() {
         <span className="text-xs text-zinc-600 font-mono">{formatTime(feed.created_at)}</span>
       </div>
 
-      {/* Video player */}
-      {feed.video_url && (
+      {/* Livestream monitoring panel */}
+      {feed.stream_url && (
+        <div className="mb-5">
+          {feed.status === "monitoring" && (
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-xs font-medium text-red-400 uppercase tracking-wider">Live Monitoring</span>
+                {monitoringCycle > 0 && (
+                  <span className="text-[11px] text-zinc-500">
+                    — {monitoringCycle} event{monitoringCycle !== 1 ? "s" : ""} detected
+                    {monitoringStatus === "capturing"
+                      ? " · Starting session..."
+                      : monitoringStatus === "analyzing"
+                      ? " · Analyzing stream..."
+                      : monitoringStatus === "done"
+                      ? " · New event!"
+                      : monitoringStatus === "error"
+                      ? " · Error (retrying)"
+                      : ""}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleStopMonitoring}
+                disabled={stopping}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors disabled:opacity-50"
+              >
+                {stopping ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <StopCircle size={12} />
+                )}
+                Stop Monitoring
+              </button>
+            </div>
+          )}
+
+          {/* Stream info card */}
+          <div className="rounded-lg border border-[#27272A] bg-[#18181B] overflow-hidden">
+            <div className="p-4 space-y-3">
+              {/* Stream source */}
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Radio size={14} className="text-red-400" />
+                <span className="text-zinc-300 font-mono text-[13px] truncate">{feed.stream_url}</span>
+              </div>
+
+              {/* NomadicML Viewer link */}
+              {feed.viewer_url && (
+                <a
+                  href={feed.viewer_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-500/[0.08] border border-blue-500/25 text-blue-400 text-[13px] font-medium hover:bg-blue-500/[0.15] transition-colors w-fit"
+                >
+                  <Play size={14} />
+                  Open in NomadicML Viewer ↗
+                </a>
+              )}
+
+              {/* Stream player — YouTube embed or HLS player */}
+              {(() => {
+                const url = feed.stream_url ?? "";
+                const videoId = getYouTubeVideoId(url);
+                if (videoId) {
+                  return (
+                    <div className="rounded-lg overflow-hidden border border-[#27272A] bg-black">
+                      <div className="aspect-video w-full">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`}
+                          className="w-full h-full"
+                          allow="autoplay; encrypted-media"
+                          allowFullScreen
+                          title="Live Stream"
+                        />
+                      </div>
+                    </div>
+                  );
+                }
+                // HLS / M3U8 or direct stream URL
+                if (url && (url.includes(".m3u8") || url.startsWith("http"))) {
+                  return (
+                    <HlsPlayer
+                      src={url}
+                      autoPlay
+                      muted
+                      className="border border-[#27272A]"
+                    />
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            {/* Live event feed — directly below the player */}
+            <div className="border-t border-[#27272A]">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-[#111113]">
+                <div className="flex items-center gap-2">
+                  <Zap size={13} className="text-yellow-400" />
+                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    Live Events
+                  </span>
+                  {events.length > 0 && (
+                    <span className="text-[11px] font-medium text-zinc-500">
+                      ({events.length})
+                    </span>
+                  )}
+                </div>
+                {feed.status === "monitoring" && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-[11px] text-green-400/80">
+                      {monitoringStatus === "capturing"
+                        ? "Starting session..."
+                        : monitoringStatus === "analyzing"
+                        ? "Analyzing stream..."
+                        : monitoringStatus === "waiting"
+                        ? "Waiting for next cycle..."
+                        : monitoringStatus === "done"
+                        ? "New event detected"
+                        : "Listening..."}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Events appear here in real-time */}
+              {events.length === 0 && feed.status === "monitoring" && (
+                <div className="flex items-center justify-center py-8 px-4">
+                  <Loader2 size={16} className="text-zinc-600 animate-spin mr-2" />
+                  <span className="text-sm text-zinc-500">
+                    Waiting for events... The SDK is analyzing the stream in real-time.
+                  </span>
+                </div>
+              )}
+
+              {events.length === 0 && feed.status === "completed" && (
+                <div className="flex items-center justify-center py-8 px-4">
+                  <span className="text-sm text-zinc-500">No events were detected in this stream.</span>
+                </div>
+              )}
+
+              {events.length > 0 && (
+                <div className="max-h-[480px] overflow-y-auto divide-y divide-[#27272A]">
+                  {events.map((event, index) => {
+                    const sev = SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.Low;
+                    const isCritical = event.severity === "Critical" || event.severity === "High";
+                    const isSelected = selectedIds.has(event.id);
+                    const isExpanded = expandedId === event.id;
+                    const isNew = index === 0 && feed.status === "monitoring";
+
+                    return (
+                      <div
+                        key={event.id}
+                        className={`transition-all duration-300 ${isNew ? "bg-yellow-500/[0.03]" : ""}`}
+                      >
+                        <div
+                          className={`flex items-center gap-3 px-4 py-3 hover:bg-[#1a1a1d] transition-colors cursor-pointer ${
+                            isSelected ? "border-l-2 border-l-blue-500" : "border-l-2 border-l-transparent"
+                          }`}
+                          onClick={() => setExpandedId(isExpanded ? null : event.id)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => { e.stopPropagation(); toggleSelect(event.id); }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-3.5 h-3.5 rounded border-zinc-600 bg-transparent accent-blue-500 cursor-pointer flex-shrink-0"
+                          />
+
+                          <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${isCritical ? "bg-red-500/10" : "bg-[#27272A]"}`}>
+                            <AlertTriangle size={13} className={isCritical ? "text-red-400" : "text-zinc-600"} />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[13px] font-medium text-zinc-100 truncate">{event.title}</p>
+                              {event.status !== "new" && (
+                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                                  event.status === "acknowledged" ? "bg-green-500/10 text-green-400" : "bg-zinc-700 text-zinc-500"
+                                }`}>
+                                  {event.status}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{event.category}</span>
+                              <span className={`text-[11px] px-1.5 py-0.5 rounded-full border ${sev.bg} ${sev.text} ${sev.border}`}>{event.severity}</span>
+                              <span className="text-[11px] text-zinc-600 font-mono">{formatTime(event.timestamp)}</span>
+                            </div>
+                          </div>
+
+                          {isCritical && event.status === "new" && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleQuickNotify(event); }}
+                              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-red-400 border border-red-500/25 bg-red-500/[0.08] rounded-md hover:bg-red-500/[0.15] transition-colors flex-shrink-0"
+                              title="Quick alert"
+                            >
+                              <Bell size={10} /> Alert
+                            </button>
+                          )}
+
+                          <ChevronDown
+                            size={13}
+                            className={`text-zinc-600 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
+                          />
+                        </div>
+
+                        {isExpanded && (
+                          <div className="px-14 py-3 bg-[#111113]">
+                            <p className="text-[13px] text-zinc-300 leading-relaxed mb-2">{event.description}</p>
+                            <div className="flex items-center gap-4 text-[11px] text-zinc-600 mb-3">
+                              <span>Confidence: {(event.confidence * 100).toFixed(0)}%</span>
+                              <span>Feed: {event.source_feed}</span>
+                              <span>ID: {event.id.slice(0, 8)}</span>
+                            </div>
+                            {event.status === "new" && (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleStatusUpdate(event.id, "acknowledged"); }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+                                >
+                                  <Check size={12} /> Acknowledge
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleStatusUpdate(event.id, "dismissed"); }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
+                                >
+                                  <X size={12} /> Dismiss
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video player (for uploaded files, not livestreams) */}
+      {feed.video_url && !feed.stream_url && (
         <VideoPlayer videoUrl={feed.video_url} feedName={feed.feed_name} />
       )}
 
       {/* Action bar */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {/* Re-analyze button */}
-        {feed.status !== "processing" && (
+        {feed.status !== "processing" && feed.status !== "monitoring" && (
           <button
             onClick={() => setShowReanalyzeConfirm(true)}
             disabled={reanalyzing}
@@ -237,8 +523,8 @@ export default function FeedDetailPage() {
         </div>
       )}
 
-      {/* No events */}
-      {events.length === 0 && feed.status === "completed" && (
+      {/* No events (non-stream feeds) */}
+      {!feed.stream_url && events.length === 0 && feed.status === "completed" && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <AlertTriangle size={28} className="text-zinc-600 mb-3" />
           <p className="text-sm text-zinc-400">No events detected in this video.</p>
@@ -254,8 +540,8 @@ export default function FeedDetailPage() {
         </div>
       )}
 
-      {/* Events list */}
-      {events.length > 0 && (
+      {/* Events list (for uploaded video feeds only — livestream events shown inline above) */}
+      {events.length > 0 && !feed.stream_url && (
         <div className="border border-[#27272A] rounded-lg overflow-hidden">
           {events.map((event) => {
             const isSelected = selectedIds.has(event.id);
@@ -574,6 +860,13 @@ function StatusBadge({ status }: { status: string }) {
       </span>
     );
   }
+  if (status === "monitoring") {
+    return (
+      <span className="flex items-center gap-1 text-[11px] font-medium text-red-400 animate-pulse">
+        <Radio size={12} /> Live
+      </span>
+    );
+  }
   return (
     <span className="flex items-center gap-1 text-[11px] font-medium text-yellow-400 animate-pulse">
       <Loader2 size={12} className="animate-spin" /> Analyzing
@@ -590,19 +883,29 @@ function NotifyModal({
   onClose: () => void;
   onSent: () => void;
 }) {
-  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(() => {
-    const autoSelect = new Set<string>();
-    for (const e of selectedEvents) {
-      if (e.severity === "Critical" || e.severity === "High") {
-        autoSelect.add("alex-rivera");
-      }
-      if (e.category === "Safety") autoSelect.add("priya-desai");
-      if (e.category === "Equipment") autoSelect.add("sam-okafor");
-      if (e.category === "Shipment") autoSelect.add("jordan-lin");
-    }
-    if (autoSelect.size === 0) autoSelect.add("alex-rivera");
-    return autoSelect;
-  });
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getPersonas()
+      .then((data: Persona[]) => {
+        setPersonas(data);
+        const autoSelect = new Set<string>();
+        const categoryMap: Record<string, string> = {};
+        for (const p of data) {
+          if (p.category) categoryMap[p.category] = p.id;
+        }
+        for (const e of selectedEvents) {
+          if (e.severity === "Critical" || e.severity === "High") {
+            if (data.length > 0) autoSelect.add(data[0].id);
+          }
+          if (categoryMap[e.category]) autoSelect.add(categoryMap[e.category]);
+        }
+        if (autoSelect.size === 0 && data.length > 0) autoSelect.add(data[0].id);
+        setSelectedPersonas(autoSelect);
+      })
+      .catch(() => {});
+  }, []);
 
   const [message, setMessage] = useState(() => {
     const lines = selectedEvents.map((e) => `• [${e.severity}] ${e.title} (${e.category})`);
@@ -650,7 +953,9 @@ function NotifyModal({
         <div className="mt-4">
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Recipients</label>
           <div className="mt-2 space-y-1.5">
-            {PERSONAS.map((p: Persona) => (
+            {personas.length === 0 ? (
+              <p className="text-xs text-zinc-500">Loading recipients...</p>
+            ) : personas.map((p: Persona) => (
               <label
                 key={p.id}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-[#27272A]/50 cursor-pointer transition-colors"

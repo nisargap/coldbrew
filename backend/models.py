@@ -2,16 +2,6 @@ from pydantic import BaseModel
 from typing import Optional
 
 
-# --- Personas (hardcoded) ---
-
-PERSONAS = {
-    "alex-rivera": {"id": "alex-rivera", "name": "Alex Rivera", "role": "Warehouse Manager"},
-    "sam-okafor": {"id": "sam-okafor", "name": "Sam Okafor", "role": "Maintenance Technician"},
-    "jordan-lin": {"id": "jordan-lin", "name": "Jordan Lin", "role": "Dock Supervisor"},
-    "priya-desai": {"id": "priya-desai", "name": "Priya Desai", "role": "Safety Officer"},
-}
-
-
 # --- Request / Response models ---
 
 class FeedUploadResponse(BaseModel):
@@ -29,6 +19,10 @@ class FeedResponse(BaseModel):
     analysis_mode: str = "standard"
     confidence_level: str = "low"
     video_url: Optional[str] = None
+    stream_url: Optional[str] = None
+    nomadic_stream_id: Optional[str] = None
+    session_id: Optional[str] = None
+    viewer_url: Optional[str] = None
     created_at: str
     event_count: int
 
@@ -68,6 +62,7 @@ class PersonaResponse(BaseModel):
     id: str
     name: str
     role: str
+    category: Optional[str] = None
 
 
 class NotificationSendResponse(BaseModel):

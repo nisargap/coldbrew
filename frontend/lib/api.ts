@@ -17,6 +17,41 @@ export async function uploadFeed(file: File, feedName: string, analysisMode: str
   return res.json();
 }
 
+export async function startLivestream(url: string, feedName: string, analysisMode: string = "standard", query: string = "") {
+  const res = await fetch(`${API_URL}/api/feeds/livestream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, feed_name: feedName, analysis_mode: analysisMode, query }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Livestream failed" }));
+    throw new Error(err.detail || "Livestream failed");
+  }
+  return res.json();
+}
+
+export async function stopLivestream(feedId: string) {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/livestream`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to stop" }));
+    throw new Error(err.detail || "Failed to stop livestream");
+  }
+  return res.json();
+}
+
+export async function stopAllLivestreams() {
+  const res = await fetch(`${API_URL}/api/feeds/livestream/all`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to stop all" }));
+    throw new Error(err.detail || "Failed to stop all livestreams");
+  }
+  return res.json();
+}
+
 export async function reanalyzeFeed(feedId: string, analysisMode: string = "agent", confidenceLevel: string = "low") {
   const params = new URLSearchParams({ analysis_mode: analysisMode, confidence_level: confidenceLevel });
   const res = await fetch(`${API_URL}/api/feeds/${feedId}/reanalyze?${params}`, {
@@ -88,6 +123,12 @@ export async function getNotifications() {
   return res.json();
 }
 
+export async function getPersonas() {
+  const res = await fetch(`${API_URL}/api/personas`);
+  if (!res.ok) throw new Error("Failed to fetch personas");
+  return res.json();
+}
+
 /**
  * Subscribe to real-time feed status updates via SSE.
  * Returns an unsubscribe function.
@@ -113,10 +154,16 @@ export function subscribeFeedUpdates(onUpdate: (data: FeedSSEEvent) => void): ()
 }
 
 export interface FeedSSEEvent {
-  type: "feed_update";
+  type: "feed_update" | "livestream_cycle";
   feed_id: string;
-  status: "completed" | "error";
+  status?: "completed" | "error" | "monitoring" | "capturing" | "analyzing" | "done";
   event_count?: number;
   error_message?: string;
+  error?: string;
   feed_name?: string;
+  analysis_mode?: string;
+  cycle?: number;
+  viewer_url?: string;
+  stream_id?: string;
+  session_id?: string;
 }

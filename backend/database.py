@@ -64,6 +64,11 @@ def create_tables():
             category    TEXT,
             created_at  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS telegram_chats (
+            chat_id       INTEGER PRIMARY KEY,
+            subscribed_at TEXT NOT NULL
+        );
         """
     )
 

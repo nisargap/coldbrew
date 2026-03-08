@@ -1,5 +1,6 @@
 import uuid
 import json
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from models import (
     PersonaResponse,
     EventSummary,
 )
+from services.telegram import send_to_all_chats
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -65,6 +67,9 @@ def send_notification(
     db.commit()
 
     logger.info(f"Notification {notification_id} sent to {[p['name'] for p in sent_to]} for {len(body.event_ids)} events")
+
+    # Push to Telegram
+    asyncio.create_task(send_to_all_chats(body.message))
 
     return NotificationSendResponse(
         notification_id=notification_id,

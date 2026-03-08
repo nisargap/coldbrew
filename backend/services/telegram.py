@@ -6,6 +6,8 @@ Users chat naturally — Claude interprets intent, calls tools, responds.
 
 import os
 import logging
+import sqlite3
+from datetime import datetime, timezone
 
 import anthropic
 from telegram import Update
@@ -18,6 +20,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
+from database import DB_PATH
 from services.telegram_tools import TOOLS, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,21 @@ logger = logging.getLogger(__name__)
 # Per-chat conversation history (in-memory)
 _conversations: dict[int, list[dict]] = {}
 MAX_HISTORY = 20
+
+
+def _save_chat(chat_id: int, username: str | None, first_name: str | None):
+    """Persist a Telegram chat_id so we can send notifications later."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO telegram_chats (chat_id, username, first_name, created_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET username=excluded.username, first_name=excluded.first_name",
+            (chat_id, username, first_name, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 SYSTEM_PROMPT = (
     "You are ColdBrew, a warehouse intelligence assistant on Telegram. "
@@ -117,6 +135,12 @@ async def _handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _start_command(update: Update, _context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    _save_chat(
+        update.message.chat_id,
+        user.username if user else None,
+        user.first_name if user else None,
+    )
     await update.message.reply_text(
         "ColdBrew — Warehouse Intelligence\n\n"
         "Just ask me anything:\n"
@@ -164,6 +188,30 @@ async def start_bot():
     except Exception as e:
         logger.error(f"[Telegram] Bot startup failed: {e}")
         _bot_app = None
+
+
+async def send_to_all_chats(message: str):
+    """Send a message to all registered Telegram chats."""
+    if not _bot_app:
+        logger.warning("[Telegram] Bot not running — cannot send notifications")
+        return 0
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT chat_id FROM telegram_chats").fetchall()
+    finally:
+        conn.close()
+
+    sent = 0
+    for row in rows:
+        try:
+            await _bot_app.bot.send_message(
+                chat_id=row[0], text=message, parse_mode=ParseMode.HTML
+            )
+            sent += 1
+        except Exception as e:
+            logger.error(f"[Telegram] Failed to send to {row[0]}: {e}")
+    return sent
 
 
 async def stop_bot():

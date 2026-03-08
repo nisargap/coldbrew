@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Upload, LayoutDashboard, Bell } from "lucide-react";
+import { Upload, LayoutDashboard, Bell, Activity } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/status", label: "Status", icon: Activity },
 ];
 
 export default function Sidebar() {

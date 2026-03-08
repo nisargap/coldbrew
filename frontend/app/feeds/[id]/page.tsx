@@ -19,6 +19,7 @@ import {
   Zap,
   Radio,
   StopCircle,
+  MessageCircle,
 } from "lucide-react";
 import {
   getFeed,
@@ -29,10 +30,13 @@ import {
   stopLivestream,
   subscribeFeedUpdates,
   getPersonas,
+  getFeedEnrichments,
+  triggerEnrichment,
 } from "@/lib/api";
-import type { Event, Feed, Persona, AnalysisMode, ConfidenceLevel } from "@/lib/types";
-import { SEVERITY_COLORS, ANALYSIS_MODES, CONFIDENCE_LEVELS } from "@/lib/types";
+import type { Event, Feed, Persona, AnalysisMode, ConfidenceLevel, EventEnrichment } from "@/lib/types";
+import { SEVERITY_COLORS, ANALYSIS_MODES, CONFIDENCE_LEVELS, getRiskColor, getRiskBg } from "@/lib/types";
 import HlsPlayer from "@/components/hls-player";
+import ConversationPanel from "@/components/conversation-panel";
 
 export default function FeedDetailPage() {
   const params = useParams();
@@ -55,6 +59,10 @@ export default function FeedDetailPage() {
   const [stopping, setStopping] = useState(false);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [enrichments, setEnrichments] = useState<Record<string, EventEnrichment>>({});
+  const [enriching, setEnriching] = useState(false);
+  const [showConversation, setShowConversation] = useState(false);
+  const [autoStartConversation, setAutoStartConversation] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -65,6 +73,18 @@ export default function FeedDetailPage() {
       ]);
       setFeed(feedData);
       setEvents(eventsData);
+
+      // Also fetch enrichments if available
+      try {
+        const enrichmentList: EventEnrichment[] = await getFeedEnrichments(feedId);
+        const enrichmentMap: Record<string, EventEnrichment> = {};
+        for (const e of enrichmentList) {
+          enrichmentMap[e.event_id] = e;
+        }
+        setEnrichments(enrichmentMap);
+      } catch {
+        // Not critical
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load feed data.";
       setLoadError(msg);
@@ -72,6 +92,19 @@ export default function FeedDetailPage() {
       setLoading(false);
     }
   }, [feedId]);
+
+  const handleTriggerEnrichment = async () => {
+    setEnriching(true);
+    try {
+      await triggerEnrichment(feedId);
+      showToast("AI analysis started. Results will appear shortly.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to trigger enrichment.";
+      showToast(`Error: ${msg}`);
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -83,14 +116,19 @@ export default function FeedDetailPage() {
         if (event.type === "livestream_cycle") {
           setMonitoringCycle(event.cycle ?? 0);
           setMonitoringStatus(event.status ?? null);
-          // Refresh data when a new event is detected
           if (event.status === "done") {
             fetchData();
           }
-          // Refresh feed data when we get session info (viewer_url)
           if (event.viewer_url || event.session_id) {
             fetchData();
           }
+        } else if (event.type === "agentic_complete") {
+          // Refresh enrichments and auto-open conversation when agentic analysis completes
+          fetchData();
+          setShowConversation(true);
+          setAutoStartConversation(true);
+        } else if (event.type === "voice_alert_ready") {
+          fetchData();
         } else {
           fetchData();
         }
@@ -462,8 +500,11 @@ export default function FeedDetailPage() {
                               <span>Feed: {event.source_feed}</span>
                               <span>ID: {event.id.slice(0, 8)}</span>
                             </div>
+                            {enrichments[event.id] && (
+                              <EnrichmentPanel enrichment={enrichments[event.id]} compact />
+                            )}
                             {event.status === "new" && (
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 mt-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleStatusUpdate(event.id, "acknowledged"); }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-zinc-300 border border-[#27272A] rounded-md hover:bg-[#27272A] transition-colors"
@@ -510,6 +551,45 @@ export default function FeedDetailPage() {
               <Bot size={12} />
             )}
             {feed.analysis_mode === "agent" ? "Re-analyze (Standard)" : "Analyze with Agent"}
+          </button>
+        )}
+
+        {/* AI Enrichment button */}
+        {feed.status === "completed" && events.length > 0 && (
+          <button
+            onClick={handleTriggerEnrichment}
+            disabled={enriching || feed.agentic_status === "processing"}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-emerald-400 border border-emerald-500/25 bg-emerald-500/[0.08] rounded-md hover:bg-emerald-500/[0.15] transition-colors disabled:opacity-50"
+          >
+            {enriching || feed.agentic_status === "processing" ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Zap size={12} />
+            )}
+            {feed.agentic_status === "processing"
+              ? "AI Analyzing..."
+              : feed.agentic_status === "completed"
+              ? "Re-run AI Analysis"
+              : "Run AI Analysis"}
+          </button>
+        )}
+
+        {/* Agentic status badge */}
+        {feed.agentic_status === "completed" && Object.keys(enrichments).length > 0 && (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-400 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+            <CheckCircle2 size={10} />
+            {Object.keys(enrichments).length} events enriched
+          </span>
+        )}
+
+        {/* Talk to Analyst button */}
+        {feed.status === "completed" && events.length > 0 && (
+          <button
+            onClick={() => { setShowConversation(true); setAutoStartConversation(false); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-blue-400 border border-blue-500/25 bg-blue-500/[0.08] rounded-md hover:bg-blue-500/[0.15] transition-colors"
+          >
+            <MessageCircle size={12} />
+            Talk to Analyst
           </button>
         )}
 
@@ -656,8 +736,14 @@ export default function FeedDetailPage() {
                       <span>Feed: {event.source_feed}</span>
                       <span>ID: {event.id.slice(0, 8)}</span>
                     </div>
+
+                    {/* AI Enrichment Panel */}
+                    {enrichments[event.id] && (
+                      <EnrichmentPanel enrichment={enrichments[event.id]} />
+                    )}
+
                     {event.status === "new" && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-3">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -810,9 +896,22 @@ export default function FeedDetailPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-[#18181B] border border-[#27272A] text-zinc-200 text-sm px-4 py-3 rounded-lg shadow-xl z-50 animate-[fadeIn_150ms_ease-in]">
+        <div className="fixed bottom-6 left-6 bg-[#18181B] border border-[#27272A] text-zinc-200 text-sm px-4 py-3 rounded-lg shadow-xl z-40 animate-[fadeIn_150ms_ease-in]">
           {toast}
         </div>
+      )}
+
+      {/* Conversational AI Panel */}
+      {showConversation && feed && (
+        <ConversationPanel
+          feedId={feedId}
+          feedName={feed.feed_name}
+          autoStart={autoStartConversation}
+          onClose={() => {
+            setShowConversation(false);
+            setAutoStartConversation(false);
+          }}
+        />
       )}
     </div>
   );
@@ -1021,6 +1120,125 @@ function NotifyModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const VOICE_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function EnrichmentPanel({ enrichment, compact = false }: { enrichment: EventEnrichment; compact?: boolean }) {
+  const [showDetails, setShowDetails] = useState(!compact);
+
+  return (
+    <div className={`rounded-lg border ${getRiskBg(enrichment.risk_score)} mb-3`}>
+      {/* Header — always visible */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowDetails(!showDetails); }}
+        className="w-full flex items-center justify-between px-3 py-2 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Zap size={12} className="text-emerald-400" />
+          <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">AI Analysis</span>
+          <span className={`text-[12px] font-bold ${getRiskColor(enrichment.risk_score)}`}>
+            Risk: {enrichment.risk_score}/10
+          </span>
+        </div>
+        <ChevronDown
+          size={12}
+          className={`text-zinc-500 transition-transform ${showDetails ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {/* Details */}
+      {showDetails && (
+        <div className="px-3 pb-3 space-y-3">
+          {/* Root Cause */}
+          <div>
+            <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-0.5">Root Cause</p>
+            <p className="text-[12px] text-zinc-300 leading-relaxed">{enrichment.root_cause}</p>
+          </div>
+
+          {/* Recommended Actions */}
+          <div>
+            <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Recommended Actions</p>
+            <ul className="space-y-1">
+              {enrichment.recommended_actions.map((action, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-[12px] text-zinc-400">
+                  <span className="text-emerald-400 mt-0.5 flex-shrink-0">→</span>
+                  <span>{action}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Urgency Reasoning */}
+          <div>
+            <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-0.5">Urgency Assessment</p>
+            <p className="text-[12px] text-zinc-400 leading-relaxed">{enrichment.urgency_reasoning}</p>
+          </div>
+
+          {/* Suggested Personas */}
+          {enrichment.suggested_personas.length > 0 && (
+            <div>
+              <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Notify</p>
+              <div className="space-y-1">
+                {enrichment.suggested_personas.map((p, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[12px]">
+                    <span className="text-blue-400 font-medium whitespace-nowrap">{p.role}</span>
+                    <span className="text-zinc-500">— {p.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Correlation Notes */}
+          {enrichment.correlation_notes && (
+            <div>
+              <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-0.5">Correlations</p>
+              <p className="text-[12px] text-zinc-400">{enrichment.correlation_notes}</p>
+            </div>
+          )}
+
+          {/* Voice Alert */}
+          {enrichment.voice_alert_script && (
+            <div className="rounded-md bg-[#27272A] p-2.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[14px]">🔊</span>
+                <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Voice Alert</p>
+                {enrichment.voice_alert_status === "completed" && (
+                  <span className="text-[9px] font-medium text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">Ready</span>
+                )}
+                {enrichment.voice_alert_status === "skipped" && (
+                  <span className="text-[9px] font-medium text-zinc-500 bg-zinc-700 px-1 py-0.5 rounded">No API key</span>
+                )}
+                {enrichment.voice_alert_status === "error" && (
+                  <span className="text-[9px] font-medium text-red-400 bg-red-500/10 px-1 py-0.5 rounded">Failed</span>
+                )}
+              </div>
+              <p className="text-[12px] text-zinc-300 italic leading-relaxed">
+                &ldquo;{enrichment.voice_alert_script}&rdquo;
+              </p>
+              {enrichment.voice_alert_url && enrichment.voice_alert_status === "completed" && (
+                <audio
+                  controls
+                  preload="none"
+                  className="mt-2 w-full h-8"
+                  src={`${VOICE_BASE}${enrichment.voice_alert_url}`}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Model info */}
+          <div className="flex items-center gap-2 text-[10px] text-zinc-600 pt-1 border-t border-zinc-800">
+            <Bot size={10} />
+            <span>{enrichment.model_used}</span>
+            <span>·</span>
+            <span>{new Date(enrichment.created_at).toLocaleString()}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

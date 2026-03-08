@@ -6,6 +6,9 @@ Users chat naturally — Claude interprets intent, calls tools, responds.
 
 import os
 import logging
+import asyncio
+import sqlite3
+from datetime import datetime, timezone
 import sqlite3
 from datetime import datetime, timezone
 
@@ -22,6 +25,8 @@ from telegram.ext import (
 
 from database import DB_PATH
 from services.telegram_tools import TOOLS, execute_tool
+
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "coldbrew.db")
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +108,42 @@ def _call_claude(history: list[dict]) -> str:
     return "Hit my processing limit — try a simpler question."
 
 
+def _save_chat_id(chat_id: int) -> None:
+    """Auto-save a chat ID so the user receives push alerts."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO telegram_chats (chat_id, subscribed_at) VALUES (?, ?)",
+            (chat_id, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _remove_chat_id(chat_id: int) -> None:
+    """Remove a chat ID so the user stops receiving push alerts."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM telegram_chats WHERE chat_id = ?", (chat_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def _unsubscribe_command(update: Update, _context: ContextTypes.DEFAULT_TYPE):
+    _remove_chat_id(update.message.chat_id)
+    await update.message.reply_text("Unsubscribed — you won't receive push alerts anymore. Send any message to re-subscribe.")
+
+
 async def _handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
     chat_id = update.message.chat_id
     user_text = update.message.text
+
+    _save_chat_id(chat_id)
 
     if chat_id not in _conversations:
         _conversations[chat_id] = []
@@ -135,6 +170,7 @@ async def _handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _start_command(update: Update, _context: ContextTypes.DEFAULT_TYPE):
+    _save_chat_id(update.message.chat_id)
     user = update.message.from_user
     _save_chat(
         update.message.chat_id,
@@ -178,6 +214,7 @@ async def start_bot():
         _bot_app = Application.builder().token(token).build()
         _bot_app.add_handler(CommandHandler("start", _start_command))
         _bot_app.add_handler(CommandHandler("clear", _clear_command))
+        _bot_app.add_handler(CommandHandler("unsubscribe", _unsubscribe_command))
         _bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))
 
         await _bot_app.initialize()
@@ -222,3 +259,57 @@ async def stop_bot():
         await _bot_app.shutdown()
         _bot_app = None
         logger.info("[Telegram] Bot stopped")
+
+
+# --- Push alerts ---
+
+_SEVERITY_ICONS = {
+    "Critical": "\U0001f534",
+    "High": "\U0001f7e0",
+    "Medium": "\U0001f7e1",
+    "Low": "\U0001f535",
+}
+
+
+def _format_alert(event: dict) -> str:
+    icon = _SEVERITY_ICONS.get(event.get("severity", ""), "\U0001f535")
+    severity = event.get("severity", "Unknown")
+    title = event.get("title", "Unnamed Event")
+    category = event.get("category", "")
+    source = event.get("source_feed", "")
+    confidence = event.get("confidence", 0)
+    return f"{icon} {severity.upper()} — {title}\n{category} · {source} · Confidence: {confidence:.2f}"
+
+
+async def _push_alerts(events: list[dict]) -> None:
+    """Send alert messages to all subscribed Telegram chats."""
+    if not _bot_app or not events:
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT chat_id FROM telegram_chats").fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return
+
+    bot = _bot_app.bot
+    for event in events:
+        text = _format_alert(event)
+        for (chat_id,) in rows:
+            try:
+                await bot.send_message(chat_id=chat_id, text=text)
+            except Exception as e:
+                logger.warning(f"[Telegram] Failed to send alert to {chat_id}: {e}")
+
+
+def send_alerts(events: list[dict]) -> None:
+    """
+    Send push alerts to all subscribed Telegram chats.
+    Safe to call from sync background threads.
+    """
+    if not _bot_app or not events:
+        return
+    asyncio.run(_push_alerts(events))

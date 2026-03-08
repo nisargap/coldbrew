@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timezone
 
 from services.event_bus import publish as publish_sse
+from services.telegram import send_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +322,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
                 (total_events, analysis_mode, feed_id),
             )
             conn.commit()
+            send_alerts(events)
             logger.info(f"[Analysis] Feed {feed_id} cycle complete ({analysis_mode}). {len(events)} new events, {total_events} total.")
         else:
             conn.execute(
@@ -328,6 +330,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
                 ("completed", len(events), analysis_mode, feed_id),
             )
             conn.commit()
+            send_alerts(events)
             logger.info(f"[Analysis] Feed {feed_id} complete ({analysis_mode}). {len(events)} events stored.")
 
             # Publish real-time update via SSE (only for non-monitoring feeds)
@@ -339,6 +342,16 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
                 "feed_name": feed_name,
                 "analysis_mode": analysis_mode,
             })
+
+            # Step 6: Agentic enrichment + voice alerts (non-blocking)
+            if events and os.environ.get("ANTHROPIC_API_KEY"):
+                try:
+                    from services.agentic import enrich_events
+                    enrich_events(feed_id, feed_name, events, analysis_mode)
+                except Exception as e:
+                    logger.warning(f"[Agentic] Enrichment failed (non-fatal): {e}")
+            elif events:
+                logger.info(f"[Agentic] ANTHROPIC_API_KEY not set — skipping enrichment for feed {feed_id}")
 
     except Exception as e:
         logger.error(f"[Analysis] Failed for feed {feed_id}: {e}", exc_info=True)

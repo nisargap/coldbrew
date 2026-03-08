@@ -265,3 +265,59 @@ def send_alerts(events: list[dict]) -> None:
     if not _bot_app or not events:
         return
     asyncio.run(_push_alerts(events))
+
+
+async def _push_analysis_complete(feed_name: str, feed_id: str, event_count: int, events: list[dict], analysis_mode: str) -> None:
+    """Send a summary message to all subscribed chats when analysis finishes."""
+    if not _bot_app:
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT chat_id FROM telegram_chats").fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return
+
+    severity_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    for ev in events:
+        sev = ev.get("severity", "Unknown")
+        cat = ev.get("category", "Unknown")
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+
+    severity_line = ", ".join(
+        f"{_SEVERITY_ICONS.get(s, '')} {s}: {c}" for s, c in sorted(severity_counts.items(), key=lambda x: ["Critical", "High", "Medium", "Low"].index(x[0]) if x[0] in ["Critical", "High", "Medium", "Low"] else 99)
+    )
+    category_line = ", ".join(f"{cat}: {c}" for cat, c in sorted(category_counts.items()))
+
+    text = (
+        f"\u2705 <b>Analysis Complete</b>\n\n"
+        f"<b>Feed:</b> {feed_name}\n"
+        f"<b>Mode:</b> {analysis_mode}\n"
+        f"<b>Events detected:</b> {event_count}\n"
+    )
+    if severity_line:
+        text += f"<b>Severity:</b> {severity_line}\n"
+    if category_line:
+        text += f"<b>Categories:</b> {category_line}\n"
+
+    bot = _bot_app.bot
+    for (chat_id,) in rows:
+        try:
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.warning(f"[Telegram] Failed to send analysis-complete to {chat_id}: {e}")
+
+
+def send_analysis_complete(feed_name: str, feed_id: str, event_count: int, events: list[dict], analysis_mode: str) -> None:
+    """
+    Notify all subscribed Telegram chats that analysis has finished.
+    Safe to call from sync background threads.
+    """
+    if not _bot_app:
+        return
+    asyncio.run(_push_analysis_complete(feed_name, feed_id, event_count, events, analysis_mode))

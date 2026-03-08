@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 
 from services.event_bus import publish as publish_sse
-from services.telegram import send_alerts
+from services.telegram import send_alerts, send_analysis_complete
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +331,7 @@ def analyze_video(file_path: str, feed_id: str, feed_name: str, analysis_mode: s
             )
             conn.commit()
             send_alerts(events)
+            send_analysis_complete(feed_name, feed_id, len(events), events, analysis_mode)
             logger.info(f"[Analysis] Feed {feed_id} complete ({analysis_mode}). {len(events)} events stored.")
 
             # Publish real-time update via SSE (only for non-monitoring feeds)

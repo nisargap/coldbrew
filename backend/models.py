@@ -21,6 +21,7 @@ class FeedResponse(BaseModel):
     agentic_status: Optional[str] = None
     video_url: Optional[str] = None
     stream_url: Optional[str] = None
+    stream_query: Optional[str] = None
     nomadic_stream_id: Optional[str] = None
     session_id: Optional[str] = None
     viewer_url: Optional[str] = None

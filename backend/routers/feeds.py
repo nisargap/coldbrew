@@ -28,7 +28,7 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 
 VALID_MODES = {"standard", "agent"}
 
-# Track active livestream monitors: feed_id -> { stop_event, stream_id, session_id }
+# Track active livestream monitors: feed_id -> { stop_event, stream_id, session_id, query }
 _active_streams: dict[str, dict] = {}
 
 
@@ -67,6 +67,7 @@ def _row_to_feed(row: sqlite3.Row) -> FeedResponse:
         agentic_status=row["agentic_status"] if "agentic_status" in row.keys() else None,
         video_url=_video_url_from_path(file_path),
         stream_url=row["stream_url"] if "stream_url" in row.keys() else None,
+        stream_query=row["stream_query"] if "stream_query" in row.keys() else None,
         nomadic_stream_id=nomadic_stream_id,
         session_id=session_id,
         viewer_url=viewer_url,
@@ -155,8 +156,8 @@ async def start_livestream(
 
     # Create feed record with "monitoring" status
     db.execute(
-        "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, created_at, event_count, stream_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (feed_id, req.feed_name.strip(), "", "monitoring", req.analysis_mode, now, 0, req.url.strip()),
+        "INSERT INTO feeds (id, feed_name, file_path, status, analysis_mode, created_at, event_count, stream_url, stream_query) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (feed_id, req.feed_name.strip(), "", "monitoring", req.analysis_mode, now, 0, req.url.strip(), req.query.strip()),
     )
     db.commit()
 
@@ -168,6 +169,7 @@ async def start_livestream(
         "stop_event": stop_event,
         "stream_id": None,
         "session_id": None,
+        "query": req.query.strip(),
     }
 
     # Publish SSE so frontend shows monitoring status immediately
@@ -282,6 +284,42 @@ def stop_livestream(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
     return {"status": "stopped", "feed_id": feed_id}
 
 
+class UpdateQueryRequest(BaseModel):
+    query: str
+
+
+@router.patch("/{feed_id}/livestream/query")
+def update_livestream_query(feed_id: str, req: UpdateQueryRequest, db: sqlite3.Connection = Depends(get_db)):
+    """Update the detection prompt for an active livestream. Takes effect on the next cycle."""
+    stream_info = _active_streams.get(feed_id)
+    if not stream_info:
+        # Check if it's in the DB but not in memory (server restart)
+        row = db.execute("SELECT status FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Feed not found")
+        if row["status"] != "monitoring":
+            raise HTTPException(status_code=400, detail="Feed is not currently being monitored")
+        raise HTTPException(status_code=400, detail="Livestream monitor is not running in this server instance. Restart the stream to use a new prompt.")
+
+    # Update in-memory query (the monitor loop reads this each cycle)
+    stream_info["query"] = req.query.strip()
+
+    # Persist to DB
+    db.execute("UPDATE feeds SET stream_query = ? WHERE id = ?", (req.query.strip(), feed_id))
+    db.commit()
+
+    logger.info(f"Feed {feed_id} livestream query updated: {req.query.strip()[:100]}")
+
+    publish_sse({
+        "type": "feed_update",
+        "feed_id": feed_id,
+        "status": "monitoring",
+        "query_updated": True,
+    })
+
+    return {"status": "updated", "feed_id": feed_id, "query": req.query.strip()}
+
+
 def _livestream_monitor(url: str, feed_id: str, feed_name: str, analysis_mode: str, query: str, stop_event: threading.Event):
     """Background thread: continuously monitor a livestream using NomadicML SDK.
 
@@ -305,8 +343,7 @@ def _livestream_monitor(url: str, feed_id: str, feed_name: str, analysis_mode: s
 
         client = NomadicML(api_key=api_key)
 
-        # Use warehouse prompt as rapid_review_query if no custom query provided
-        rapid_review_query = query if query else (
+        DEFAULT_WAREHOUSE_QUERY = (
             "Detect any notable events in this warehouse or facility footage: "
             "safety violations (missing PPE, restricted zones), equipment issues (conveyor jams, forklift malfunctions), "
             "shipment activity (truck arrivals, loading/unloading, damaged cargo), "
@@ -317,7 +354,24 @@ def _livestream_monitor(url: str, feed_id: str, feed_name: str, analysis_mode: s
         # ---- Continuous monitoring loop ----
         while not stop_event.is_set():
             cycle += 1
-            logger.info(f"[Livestream] Feed {feed_id} cycle {cycle}: starting NomadicML session for {url}")
+
+            # Read the latest query from _active_streams (may have been updated live)
+            current_query = query
+            stream_info = _active_streams.get(feed_id)
+            if stream_info and "query" in stream_info:
+                current_query = stream_info["query"]
+
+            rapid_review_query = current_query if current_query else DEFAULT_WAREHOUSE_QUERY
+
+            logger.info(f"[Livestream] Feed {feed_id} cycle {cycle}: starting NomadicML session for {url} (query: {rapid_review_query[:80]}...)")
+
+            # End previous session before starting a new one
+            if stream_id and session_id:
+                try:
+                    client.livestream.end_session(stream_id, session_id)
+                    logger.info(f"[Livestream] Feed {feed_id} cycle {cycle}: ended previous session {session_id}")
+                except Exception as e:
+                    logger.warning(f"[Livestream] Feed {feed_id} cycle {cycle}: failed to end previous session: {e}")
 
             publish_sse({
                 "type": "livestream_cycle",
@@ -566,7 +620,7 @@ def _sdk_event_to_local(sdk_event: dict, feed_id: str, feed_name: str) -> dict:
 @router.get("", response_model=list[FeedResponse])
 def list_feeds(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds ORDER BY created_at DESC"
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, stream_query, nomadic_stream_id, session_id FROM feeds ORDER BY created_at DESC"
     ).fetchall()
     return [_row_to_feed(row) for row in rows]
 
@@ -736,7 +790,7 @@ def reanalyze_feed(
 @router.get("/{feed_id}", response_model=FeedResponse)
 def get_feed(feed_id: str, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute(
-        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, nomadic_stream_id, session_id FROM feeds WHERE id = ?",
+        "SELECT id, feed_name, file_path, status, error_message, analysis_mode, confidence_level, agentic_status, created_at, event_count, stream_url, stream_query, nomadic_stream_id, session_id FROM feeds WHERE id = ?",
         (feed_id,),
     ).fetchone()
     if not row:

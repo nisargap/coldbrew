@@ -20,6 +20,8 @@ import {
   Radio,
   StopCircle,
   MessageCircle,
+  Pencil,
+  Save,
 } from "lucide-react";
 import {
   getFeed,
@@ -28,6 +30,7 @@ import {
   sendNotification,
   reanalyzeFeed,
   stopLivestream,
+  updateLivestreamQuery,
   subscribeFeedUpdates,
   getPersonas,
   getFeedEnrichments,
@@ -63,6 +66,9 @@ export default function FeedDetailPage() {
   const [enriching, setEnriching] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
   const [autoStartConversation, setAutoStartConversation] = useState(false);
+  const [editingQuery, setEditingQuery] = useState(false);
+  const [queryDraft, setQueryDraft] = useState("");
+  const [savingQuery, setSavingQuery] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -329,6 +335,89 @@ export default function FeedDetailPage() {
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Radio size={14} className="text-red-400" />
                 <span className="text-zinc-300 font-mono text-[13px] truncate">{feed.stream_url}</span>
+              </div>
+
+              {/* Detection prompt — editable for active streams */}
+              <div className="rounded-md border border-[#27272A] bg-[#111113] p-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
+                    Detection Prompt
+                  </span>
+                  {feed.status === "monitoring" && !editingQuery && (
+                    <button
+                      onClick={() => {
+                        setQueryDraft(feed.stream_query || "");
+                        setEditingQuery(true);
+                      }}
+                      className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      <Pencil size={10} />
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {editingQuery ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={queryDraft}
+                      onChange={(e) => setQueryDraft(e.target.value)}
+                      placeholder="Describe what events to look for, e.g. detect forklift near-misses, PPE violations, blocked exits..."
+                      rows={3}
+                      className="w-full bg-[#1a1a1d] border border-[#333] rounded-md px-3 py-2 text-[13px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          setSavingQuery(true);
+                          try {
+                            await updateLivestreamQuery(feedId, queryDraft);
+                            setEditingQuery(false);
+                            fetchData();
+                            showToast("Detection prompt updated — takes effect next cycle.");
+                          } catch (err) {
+                            showToast(err instanceof Error ? err.message : "Failed to update prompt");
+                          } finally {
+                            setSavingQuery(false);
+                          }
+                        }}
+                        disabled={savingQuery}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      >
+                        {savingQuery ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <Save size={11} />
+                        )}
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingQuery(false)}
+                        className="px-3 py-1.5 text-[12px] font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      {queryDraft && (
+                        <button
+                          onClick={() => setQueryDraft("")}
+                          className="ml-auto text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          Clear (use default)
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-600">
+                      Leave blank for general warehouse monitoring. Changes apply on the next analysis cycle.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-zinc-400 leading-relaxed">
+                    {feed.stream_query || (
+                      <span className="italic text-zinc-600">
+                        Default — general warehouse event detection (safety, equipment, shipments, operations, environment)
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
 
               {/* NomadicML Viewer link */}

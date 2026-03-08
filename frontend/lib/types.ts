@@ -11,6 +11,7 @@ export interface Feed {
   agentic_status?: string | null; // null | "processing" | "completed" | "error" | "skipped"
   video_url?: string | null;
   stream_url?: string | null;
+  stream_query?: string | null;
   nomadic_stream_id?: string | null;
   session_id?: string | null;
   viewer_url?: string | null;

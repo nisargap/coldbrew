@@ -31,6 +31,7 @@ def create_tables():
             event_count       INTEGER DEFAULT 0,
             agentic_status    TEXT DEFAULT NULL,
             stream_url        TEXT,
+            stream_query      TEXT,
             nomadic_stream_id TEXT,
             session_id        TEXT
         );
@@ -90,6 +91,17 @@ def create_tables():
         );
         """
     )
+
+    # Schema migrations — add columns that may not exist in older DBs
+    for col, tbl, default in [
+        ("agentic_status", "feeds", "NULL"),
+        ("stream_query", "feeds", "NULL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT {default}")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     # Seed default personas if table is empty
     count = conn.execute("SELECT COUNT(*) FROM personas").fetchone()[0]

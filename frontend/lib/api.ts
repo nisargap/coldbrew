@@ -41,6 +41,19 @@ export async function stopLivestream(feedId: string) {
   return res.json();
 }
 
+export async function updateLivestreamQuery(feedId: string, query: string) {
+  const res = await fetch(`${API_URL}/api/feeds/${feedId}/livestream/query`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to update query" }));
+    throw new Error(err.detail || "Failed to update livestream query");
+  }
+  return res.json();
+}
+
 export async function stopAllLivestreams() {
   const res = await fetch(`${API_URL}/api/feeds/livestream/all`, {
     method: "DELETE",
